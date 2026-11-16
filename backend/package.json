@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "node --watch local.js",
     "start": "node local.js",
-    "test": "node --test test/",
+    "test": "node --test",
     "seed": "node db/seed.js"
   },
   "dependencies": {
