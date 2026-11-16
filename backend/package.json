@@ -1,0 +1,26 @@
+{
+  "name": "onboarding-portal-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Express REST API for the Customer Onboarding Checklist Portal (Team 19)",
+  "main": "src/app.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch local.js",
+    "start": "node local.js",
+    "test": "node --test test/",
+    "seed": "node db/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}

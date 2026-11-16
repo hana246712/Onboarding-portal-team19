@@ -1,0 +1,67 @@
+/* Shared styles for all pages. Keep page-specific styles in their own section. */
+
+:root {
+  --bg: #f6f8fb;
+  --surface: #ffffff;
+  --text: #14213d;
+  --muted: #5b6475;
+  --primary: #1f5a96;
+  --border: #d9e1ec;
+  --danger: #b42318;
+  --ok: #1a7f37;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.topbar {
+  background: var(--primary);
+  color: #fff;
+  padding: 12px 24px;
+}
+
+.brand { font-weight: 600; }
+
+.container {
+  max-width: 960px;
+  margin: 32px auto;
+  padding: 0 24px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+button {
+  background: var(--primary);
+  color: #fff;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+input, select, textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%;
+}
+
+.error { color: var(--danger); }
+.ok { color: var(--ok); }
