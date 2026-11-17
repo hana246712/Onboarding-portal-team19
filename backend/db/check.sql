@@ -7,7 +7,8 @@
 -- Every line of output should say PASS. Nothing is kept: the whole
 -- script runs in one transaction that is rolled back at the end.
 --
--- On Neon, if SET ROLE is refused, first run once:
+-- roles.sql already lets the owner switch into the three roles. If you
+-- set the roles up with an older roles.sql, first run once:
 --     GRANT app_rw, dashboard_ro, notifier TO neondb_owner;
 -- =====================================================================
 

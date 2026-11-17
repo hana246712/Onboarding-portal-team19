@@ -57,4 +57,11 @@ GRANT SELECT ON onboarding_plans, tasks TO notifier;
 GRANT SELECT, INSERT ON notifications TO notifier;
 GRANT USAGE, SELECT ON SEQUENCE notifications_id_seq TO notifier;
 
+-- ---------------------------------------------------------------------
+-- Let the owner switch into these roles. Needed on Neon so check.sql
+-- can test each role with SET ROLE (otherwise every "can" check fails).
+-- This gives the roles no extra rights; the owner already has full access.
+-- ---------------------------------------------------------------------
+GRANT app_rw, dashboard_ro, notifier TO neondb_owner;
+
 COMMIT;

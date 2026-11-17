@@ -33,6 +33,10 @@ app.use(
 );
 
 app.disable('x-powered-by');
+
+// Vercel sits in front of the API as a proxy. Trusting one proxy hop
+// makes req.ip the real client address (used by the login-attempt limit).
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
 // Health check used to confirm a deployment is live.
