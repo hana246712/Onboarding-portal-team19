@@ -239,6 +239,10 @@ test('error responses have no stack traces or SQL details', { skip: SKIP }, asyn
   const cases = [
     request(app).post('/api/auth/login').set('Content-Type', 'application/json').send('{"email":'),
     request(app).get('/api/templates/1%27%20OR%201=1').set(bearer(users.Admin.token)),
+    // Larger than a Postgres INTEGER: must be 404, not a 500 from the database.
+    request(app).get('/api/templates/9999999999').set(bearer(users.Admin.token)),
+    request(app).get('/api/users/2147483648').set(bearer(users.Admin.token)),
+    request(app).patch('/api/templates/9999999999/order').set(bearer(users.Admin.token)).send({ taskIds: [1] }),
     request(app).post('/api/users').set(bearer(users.Admin.token)).send({ name: 'x', email: "a'@b.c", password: 'short', role: 'Admin' }),
   ];
   for (const res of await Promise.all(cases)) {

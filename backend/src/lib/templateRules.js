@@ -100,9 +100,16 @@ function validateDuplicate(body) {
   return cleanText(source.title, { field: 'title', max: 150, required: false });
 }
 
-// Route ids must be positive whole numbers; anything else is treated as "not found".
+// Largest value a Postgres INTEGER (SERIAL) id can hold.
+const MAX_ID = 2147483647;
+
+// Route ids must be positive whole numbers that fit in an INTEGER column;
+// anything else is treated as "not found" (404). Without the upper limit,
+// /api/templates/9999999999 would reach Postgres and fail with a 500.
 function parseId(raw) {
-  return /^[1-9][0-9]{0,9}$/.test(raw) ? Number(raw) : null;
+  if (typeof raw !== 'string' || !/^[1-9][0-9]{0,9}$/.test(raw)) return null;
+  const id = Number(raw);
+  return id <= MAX_ID ? id : null;
 }
 
-module.exports = { validateTemplate, validateOrder, validateDuplicate, parseId, VISIBILITY, ACTORS, MAX_TASKS };
+module.exports = { validateTemplate, validateOrder, validateDuplicate, parseId, MAX_ID, VISIBILITY, ACTORS, MAX_TASKS };

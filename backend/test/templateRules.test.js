@@ -74,6 +74,13 @@ test('route ids must be positive whole numbers', () => {
   }
 });
 
+test('route ids above the database INTEGER limit are "not found", not a server error', () => {
+  assert.strictEqual(parseId('2147483647'), 2147483647);
+  assert.strictEqual(parseId('2147483648'), null);
+  assert.strictEqual(parseId('9999999999'), null);
+  assert.strictEqual(parseId(undefined), null);
+});
+
 // ---- issue #7: reorder and duplicate input -----------------------------------
 const { validateOrder, validateDuplicate } = require('../src/lib/templateRules');
 const { searchPattern } = require('../src/lib/search');
