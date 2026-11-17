@@ -74,9 +74,35 @@ function validateTemplate(body) {
   return { value: { title: title.value, description: description.value, tasks } };
 }
 
+// Validates the body of PATCH /api/templates/:id/order: { taskIds: [3, 1, 2] }
+// (the template's task ids in their new order). Whether the list matches the
+// template's tasks exactly is checked against the database in the route.
+function validateOrder(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { error: 'Request body must be a JSON object' };
+  }
+  const ids = body.taskIds;
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_TASKS) {
+    return { error: `taskIds must be a list of 1 to ${MAX_TASKS} task ids` };
+  }
+  if (!ids.every((id) => Number.isInteger(id) && id > 0)) {
+    return { error: 'taskIds must contain only positive whole numbers' };
+  }
+  if (new Set(ids).size !== ids.length) {
+    return { error: 'taskIds must not repeat a task' };
+  }
+  return { value: ids };
+}
+
+// Validates the optional body of POST /api/templates/:id/duplicate: { title? }.
+function validateDuplicate(body) {
+  const source = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  return cleanText(source.title, { field: 'title', max: 150, required: false });
+}
+
 // Route ids must be positive whole numbers; anything else is treated as "not found".
 function parseId(raw) {
   return /^[1-9][0-9]{0,9}$/.test(raw) ? Number(raw) : null;
 }
 
-module.exports = { validateTemplate, parseId, VISIBILITY, ACTORS, MAX_TASKS };
+module.exports = { validateTemplate, validateOrder, validateDuplicate, parseId, VISIBILITY, ACTORS, MAX_TASKS };
