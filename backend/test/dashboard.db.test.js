@@ -106,3 +106,38 @@ test('summary: no emails in the response', { skip: SKIP }, async () => {
   assert.ok(!JSON.stringify(res.body).includes('@'));
 });
 
+const plansList = (role, query = '') => request(app).get(`/api/dashboard/plans${query}`).set(as(role));
+
+test('plans: not logged in -> 401, Customer -> 403', { skip: SKIP }, async () => {
+  assert.strictEqual((await request(app).get('/api/dashboard/plans')).status, 401);
+  assert.strictEqual((await plansList('Customer')).status, 403);
+});
+
+test('plans: shows the progress of the test plan correctly', { skip: SKIP }, async () => {
+  // the plan with 3 tasks was created in the summary test above
+  const res = await plansList('Staff', '?status=Active&limit=100');
+  assert.strictEqual(res.status, 200);
+  const mine = res.body.plans.find((p) => p.id === created.planId);
+  assert.ok(mine, 'test plan should be in the list');
+  assert.strictEqual(mine.customerName, 'Test Customer');
+  assert.strictEqual(mine.totalTasks, 3);
+  assert.strictEqual(mine.doneTasks, 1);
+  assert.strictEqual(mine.overdueTasks, 1);
+  assert.strictEqual(mine.progress, 33);
+});
+
+test('plans: bad URL options -> 400', { skip: SKIP }, async () => {
+  for (const query of ['?status=Pending', '?limit=0', '?limit=101', '?page=0', '?page=abc', '?page=1.5']) {
+    const res = await plansList('Admin', query);
+    assert.strictEqual(res.status, 400, `expected 400 for ${query}`);
+  }
+});
+
+test('plans: paging works and no emails are returned', { skip: SKIP }, async () => {
+  const res = await plansList('Admin', '?page=1&limit=1');
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.page, 1);
+  assert.strictEqual(res.body.limit, 1);
+  assert.ok(res.body.plans.length <= 1);
+  assert.ok(!JSON.stringify(res.body).includes('@'));
+});
