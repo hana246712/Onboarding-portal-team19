@@ -141,3 +141,34 @@ test('plans: paging works and no emails are returned', { skip: SKIP }, async () 
   assert.ok(res.body.plans.length <= 1);
   assert.ok(!JSON.stringify(res.body).includes('@'));
 });
+
+const auditList = (role, query = '') => request(app).get(`/api/audit${query}`).set(as(role));
+
+test('audit: not logged in -> 401, Staff and Customer -> 403', { skip: SKIP }, async () => {
+  assert.strictEqual((await request(app).get('/api/audit')).status, 401);
+  assert.strictEqual((await auditList('Staff')).status, 403);
+  assert.strictEqual((await auditList('Customer')).status, 403);
+});
+
+test('audit: Admin sees the denied Staff attempt, newest first', { skip: SKIP }, async () => {
+  // the Staff 403 above was written to the audit log as access_denied
+  const res = await auditList('Admin', '?action=access_denied&result=denied&limit=100');
+  assert.strictEqual(res.status, 200);
+  assert.ok(res.body.entries.every((e) => e.action === 'access_denied' && e.result === 'denied'));
+  assert.ok(res.body.entries.some((e) => e.actorId === userIds.Staff), 'Staff attempt should be logged');
+  const times = res.body.entries.map((e) => new Date(e.createdAt).getTime());
+  assert.deepStrictEqual(times, [...times].sort((a, b) => b - a));
+});
+
+test('audit: bad URL options -> 400', { skip: SKIP }, async () => {
+  for (const query of ['?action=DROP TABLE', '?result=maybe', '?from=banana', '?to=yesterday', '?limit=500']) {
+    const res = await auditList('Admin', query);
+    assert.strictEqual(res.status, 400, `expected 400 for ${query}`);
+  }
+});
+
+test('audit: no emails in the response', { skip: SKIP }, async () => {
+  const res = await auditList('Admin', '?limit=100');
+  assert.strictEqual(res.status, 200);
+  assert.ok(!JSON.stringify(res.body).includes('@'));
+});

@@ -1,6 +1,9 @@
 // Dashboard & Monitoring - Owner: Jana Hossam
 // Endpoints for the dashboard, notifications, audit log and the daily job
 // go here (proposal section 5.1).
+//   GET /api/dashboard/summary   Admin, Staff   counts of plans, tasks and overdue tasks
+//   GET /api/dashboard/plans     Admin, Staff   progress of each plan (?status=&page=&limit=)
+//   GET /api/audit               Admin          security log (?action=&result=&from=&to=&page=&limit=)
 
 const express = require('express');
 const pool = require('../db/pool');
@@ -17,6 +20,18 @@ function readPaging(query) {
   if (!Number.isInteger(page) || page < 1) return { error: 'page must be a whole number of 1 or more' };
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) return { error: 'limit must be a whole number from 1 to 100' };
   return { page, limit };
+}
+
+const AUDIT_RESULTS = ['allowed', 'denied'];
+
+// Reads a date from the URL. Returns { value } (null if not given) or { error }.
+function readDate(raw, name) {
+  if (raw === undefined) return { value: null };
+  const date = new Date(raw);
+  if (typeof raw !== 'string' || Number.isNaN(date.getTime())) {
+    return { error: `${name} must be a date, for example 2026-11-01` };
+  }
+  return { value: date.toISOString() };
 }
 
 router.get('/dashboard/summary', requireAuth, requireRole('Admin', 'Staff'), async (req, res, next) => {
@@ -110,6 +125,56 @@ router.get('/dashboard/plans', requireAuth, requireRole('Admin', 'Staff'), async
   }
 });
 
+
+// GET /api/audit   Admin only   security log, newest first (issue #37)
+router.get('/audit', requireAuth, requireRole('Admin'), async (req, res, next) => {
+  try {
+    const { action, result } = req.query;
+    if (action !== undefined && (typeof action !== 'string' || !/^[a-z_]{1,60}$/.test(action))) {
+      return res.status(400).json({ error: 'action must be lowercase letters and _ only (max 60)' });
+    }
+    if (result !== undefined && !AUDIT_RESULTS.includes(result)) {
+      return res.status(400).json({ error: "result must be 'allowed' or 'denied'" });
+    }
+    const from = readDate(req.query.from, 'from');
+    if (from.error) return res.status(400).json({ error: from.error });
+    const to = readDate(req.query.to, 'to');
+    if (to.error) return res.status(400).json({ error: to.error });
+    const paging = readPaging(req.query);
+    if (paging.error) return res.status(400).json({ error: paging.error });
+
+    const { rows } = await pool.dashboardDb().query(
+      `SELECT a.id, a.action, a.entity, a.entity_id, a.result, a.ip_address,
+              a.created_at, a.actor_id, u.name AS actor_name
+         FROM audit_log a
+         LEFT JOIN users u ON u.id = a.actor_id
+        WHERE ($1::text        IS NULL OR a.action = $1)
+          AND ($2::text        IS NULL OR a.result = $2)
+          AND ($3::timestamptz IS NULL OR a.created_at >= $3)
+          AND ($4::timestamptz IS NULL OR a.created_at <  $4)
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT $5 OFFSET $6`,
+      [action ?? null, result ?? null, from.value, to.value, paging.limit, (paging.page - 1) * paging.limit]
+    );
+
+    const entries = rows.map((r) => ({
+      id: Number(r.id),
+      action: r.action,
+      entity: r.entity,
+      // old Week 2 rows may hold an email here (threat model, known limit 6): never show it
+      entityId: r.entity_id && r.entity_id.includes('@') ? null : r.entity_id,
+      result: r.result,
+      ipAddress: r.ip_address,
+      actorId: r.actor_id,
+      actorName: r.actor_name,
+      createdAt: r.created_at,
+    }));
+
+    return res.json({ page: paging.page, limit: paging.limit, entries });
+  } catch (err) {
+    return next(err);
+  }
+});
 module.exports = router;
 
 
