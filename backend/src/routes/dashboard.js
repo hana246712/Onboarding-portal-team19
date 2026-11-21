@@ -10,7 +10,7 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth, requireRole } = require('../middleware/auth');
-
+const { parseId } = require('../lib/templateRules');
 const router = express.Router();
 
 const PLAN_STATUSES = ['Active', 'Completed', 'Cancelled'];
@@ -290,6 +290,99 @@ router.get('/dashboard/inactive-owners', requireAuth, requireRole('Admin', 'Staf
       assigneeName: r.assignee_name,
     }));
     return res.json({ page: paging.page, limit: paging.limit, tasks });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ---- In-app notifications (issue #39) -----------------------------------------
+// Every logged-in user, for their OWN notifications only. Uses the app role,
+// because dashboard_ro has no access to notifications and notifier can only add rows.
+
+// GET /api/notifications?unread=true&page=&limit=   my notifications, newest first
+router.get('/notifications', requireAuth, async (req, res, next) => {
+  try {
+    const { unread } = req.query;
+    if (unread !== undefined && unread !== 'true' && unread !== 'false') {
+      return res.status(400).json({ error: "unread must be 'true' or 'false'" });
+    }
+    const paging = readPaging(req.query);
+    if (paging.error) return res.status(400).json({ error: paging.error });
+
+    const { rows } = await pool.db().query(
+      `SELECT n.id, n.type, n.plan_id, n.task_id, n.created_at, n.read_at,
+              p.title AS plan_title,
+              CASE WHEN t.visibility = 'internal' AND $3 = 'Customer' THEN NULL ELSE t.title END AS task_title
+         FROM notifications n
+         JOIN onboarding_plans p ON p.id = n.plan_id
+         LEFT JOIN tasks t       ON t.id = n.task_id
+        WHERE n.user_id = $1
+          AND n.channel = 'in_app'
+          AND ($2::boolean = false OR n.read_at IS NULL)
+        ORDER BY n.created_at DESC, n.id DESC
+        LIMIT $4 OFFSET $5`,
+      [req.user.id, unread === 'true', req.user.role, paging.limit, (paging.page - 1) * paging.limit]
+    );
+
+    const notifications = rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      planId: r.plan_id,
+      planTitle: r.plan_title,
+      taskId: r.task_id,
+      taskTitle: r.task_title,
+      read: r.read_at !== null,
+      readAt: r.read_at,
+      createdAt: r.created_at,
+    }));
+    return res.json({ page: paging.page, limit: paging.limit, notifications });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/notifications/unread-count   number for the badge
+router.get('/notifications/unread-count', requireAuth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.db().query(
+      `SELECT COUNT(*)::int AS count FROM notifications
+        WHERE user_id = $1 AND channel = 'in_app' AND read_at IS NULL`,
+      [req.user.id]
+    );
+    return res.json({ unread: rows[0].count });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// PATCH /api/notifications/read-all   mark all of mine as read
+router.patch('/notifications/read-all', requireAuth, async (req, res, next) => {
+  try {
+    const { rowCount } = await pool.db().query(
+      `UPDATE notifications SET read_at = now()
+        WHERE user_id = $1 AND channel = 'in_app' AND read_at IS NULL`,
+      [req.user.id]
+    );
+    return res.json({ updated: rowCount });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// PATCH /api/notifications/:id/read   mark one of mine as read (someone else's -> 404)
+router.patch('/notifications/:id/read', requireAuth, async (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(404).json({ error: 'Notification not found' });
+
+    const { rows } = await pool.db().query(
+      `UPDATE notifications SET read_at = COALESCE(read_at, now())
+        WHERE id = $1 AND user_id = $2 AND channel = 'in_app'
+        RETURNING id, read_at`,
+      [id, req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Notification not found' });
+    return res.json({ id: rows[0].id, read: true, readAt: rows[0].read_at });
   } catch (err) {
     return next(err);
   }

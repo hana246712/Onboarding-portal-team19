@@ -272,3 +272,95 @@ test('alerts: bad paging -> 400 and no emails in any response', { skip: SKIP }, 
     assert.ok(!JSON.stringify(ok.body).includes('@'), path);
   }
 });
+
+// ---- In-app notifications (#39) -----------------------------------------------
+
+// Test data, made once (on the alert plan from the tests above):
+//   Staff:    2 notifications, one already read and one unread
+//   Customer: 1 unread notification about an INTERNAL task (title must stay hidden)
+const notes = { staffRead: null, staffUnread: null, customerInternal: null };
+
+async function makeNotifications() {
+  if (notes.staffUnread) return;
+  await makeAlertData();
+  const internal = await pool.db().query(
+    `INSERT INTO tasks (plan_id, title, position, visibility, actor, due_date)
+     VALUES ($1, 'Secret internal task', 4, 'internal', 'staff', CURRENT_DATE + 10) RETURNING id`,
+    [alert.planId]
+  );
+  const { rows } = await pool.db().query(
+    `INSERT INTO notifications (user_id, plan_id, task_id, type, channel, read_at, created_at) VALUES
+       ($1, $3, $4, 'assigned', 'in_app', now(), now() - interval '2 hours'),
+       ($1, $3, $5, 'overdue',  'in_app', NULL,  now() - interval '1 hour'),
+       ($2, $3, $6, 'assigned', 'in_app', NULL,  now())
+     RETURNING id`,
+    [userIds.Staff, userIds.Customer, alert.planId, alert.soonTaskId, alert.lateTaskId, internal.rows[0].id]
+  );
+  [notes.staffRead, notes.staffUnread, notes.customerInternal] = rows.map((r) => r.id);
+}
+
+test('notifications: not logged in -> 401 on all four', { skip: SKIP }, async () => {
+  assert.strictEqual((await request(app).get('/api/notifications')).status, 401);
+  assert.strictEqual((await request(app).get('/api/notifications/unread-count')).status, 401);
+  assert.strictEqual((await request(app).patch('/api/notifications/1/read')).status, 401);
+  assert.strictEqual((await request(app).patch('/api/notifications/read-all')).status, 401);
+});
+
+test('notifications: each user sees only their own, newest first', { skip: SKIP }, async () => {
+  await makeNotifications();
+  const staff = await get('Staff', '/api/notifications?limit=100');
+  assert.strictEqual(staff.status, 200);
+  const ids = staff.body.notifications.map((n) => n.id);
+  assert.ok(ids.includes(notes.staffRead) && ids.includes(notes.staffUnread));
+  assert.ok(!ids.includes(notes.customerInternal), "Staff must not see the Customer's notification");
+  assert.ok(ids.indexOf(notes.staffUnread) < ids.indexOf(notes.staffRead), 'newest first');
+
+  const unread = await get('Staff', '/api/notifications?unread=true&limit=100');
+  assert.ok(unread.body.notifications.every((n) => n.read === false));
+  assert.ok(unread.body.notifications.some((n) => n.id === notes.staffUnread));
+
+  assert.strictEqual((await get('Staff', '/api/notifications?unread=maybe')).status, 400);
+});
+
+test('notifications: a Customer never sees the title of an internal task', { skip: SKIP }, async () => {
+  await makeNotifications();
+  const res = await get('Customer', '/api/notifications?limit=100');
+  assert.strictEqual(res.status, 200);
+  const mine = res.body.notifications.find((n) => n.id === notes.customerInternal);
+  assert.ok(mine, 'Customer should see their own notification');
+  assert.strictEqual(mine.taskTitle, null);
+  assert.strictEqual(mine.planTitle, `Alert plan ${run}`);
+  assert.ok(!JSON.stringify(res.body).includes('Secret internal task'));
+});
+
+test('notifications: mark as read works only on your own (others -> 404)', { skip: SKIP }, async () => {
+  await makeNotifications();
+  const before = (await get('Staff', '/api/notifications/unread-count')).body.unread;
+
+  // someone else's notification, a bad id and an unknown id -> 404, nothing changes
+  assert.strictEqual((await request(app).patch(`/api/notifications/${notes.staffUnread}/read`).set(as('Customer'))).status, 404);
+  assert.strictEqual((await request(app).patch('/api/notifications/abc/read').set(as('Staff'))).status, 404);
+  assert.strictEqual((await request(app).patch('/api/notifications/999999999/read').set(as('Staff'))).status, 404);
+  assert.strictEqual((await get('Staff', '/api/notifications/unread-count')).body.unread, before);
+
+  // the owner marks it read; doing it again keeps the first read time
+  const first = await request(app).patch(`/api/notifications/${notes.staffUnread}/read`).set(as('Staff'));
+  assert.strictEqual(first.status, 200);
+  assert.strictEqual(first.body.read, true);
+  const again = await request(app).patch(`/api/notifications/${notes.staffUnread}/read`).set(as('Staff'));
+  assert.strictEqual(again.body.readAt, first.body.readAt);
+  assert.strictEqual((await get('Staff', '/api/notifications/unread-count')).body.unread, before - 1);
+});
+
+test('notifications: read-all marks only my own', { skip: SKIP }, async () => {
+  await makeNotifications();
+  const res = await request(app).patch('/api/notifications/read-all').set(as('Customer'));
+  assert.strictEqual(res.status, 200);
+  assert.ok(res.body.updated >= 1);
+  assert.strictEqual((await get('Customer', '/api/notifications/unread-count')).body.unread, 0);
+
+  // the Staff user's notifications were not touched by the Customer's read-all
+  const staff = await get('Staff', '/api/notifications?limit=100');
+  const read = staff.body.notifications.find((n) => n.id === notes.staffRead);
+  assert.ok(read.read);
+});
