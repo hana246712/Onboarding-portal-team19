@@ -28,7 +28,7 @@ const tokens = {};
 const userIds = {};
 const userEmails = [];
 const created = { templateId: null, planId: null };
-
+const alert = { templateId: null, planId: null, lateTaskId: null, soonTaskId: null, doneTaskId: null, inactiveId: null };
 const as = (role) => ({ Authorization: `Bearer ${tokens[role]}` });
 const summary = (role) => request(app).get('/api/dashboard/summary').set(as(role));
 
@@ -53,6 +53,8 @@ after(async () => {
   if (SKIP) return;
   if (created.planId) await pool.db().query('DELETE FROM onboarding_plans WHERE id = $1', [created.planId]);
   if (created.templateId) await pool.db().query('DELETE FROM templates WHERE id = $1', [created.templateId]);
+  if (alert.planId) await pool.db().query('DELETE FROM onboarding_plans WHERE id = $1', [alert.planId]);
+  if (alert.templateId) await pool.db().query('DELETE FROM templates WHERE id = $1', [alert.templateId]);
   await pool.db().query('UPDATE users SET active = false WHERE email = ANY($1)', [userEmails]);
   await pool.db().end();
 });
@@ -173,4 +175,100 @@ test('audit: no emails in the response', { skip: SKIP }, async () => {
   const res = await auditList('Admin', '?limit=100');
   assert.strictEqual(res.status, 200);
   assert.ok(!JSON.stringify(res.body).includes('@'));
+});
+
+// ---- Week 3: overdue, at-risk and inactive-owner queries (#38) ----------------
+
+// Creates the test data once: a deactivated Staff user and one Active plan with 3 tasks:
+//   late  = Not Started, due 3 days ago, owned by the deactivated user  -> overdue + inactive owner
+//   soon  = Not Started, due tomorrow, owned by the active Staff user   -> due soon (at risk)
+//   done  = Done, due 5 days ago                                        -> not overdue
+async function makeAlertData() {
+  if (alert.planId) return;
+  const email = `test-dash-inactive-${run}@example.test`;
+  const u = await pool.db().query(
+    `INSERT INTO users (name, email, password_hash, role, active)
+     VALUES ($1, $2, 'not-a-real-hash', 'Staff', false) RETURNING id`,
+    [`Test Inactive Staff ${run}`, email]
+  );
+  userEmails.push(email);
+  alert.inactiveId = u.rows[0].id;
+
+  const tpl = await pool.db().query(
+    `INSERT INTO templates (title, created_by) VALUES ($1, $2) RETURNING id`,
+    [`Alert test ${run}`, userIds.Admin]
+  );
+  alert.templateId = tpl.rows[0].id;
+  const plan = await pool.db().query(
+    `INSERT INTO onboarding_plans (template_id, template_version, customer_id, title, start_date, created_by)
+     VALUES ($1, 1, $2, $3, CURRENT_DATE - 10, $4) RETURNING id`,
+    [alert.templateId, userIds.Customer, `Alert plan ${run}`, userIds.Admin]
+  );
+  alert.planId = plan.rows[0].id;
+  const t = await pool.db().query(
+    `INSERT INTO tasks (plan_id, title, position, visibility, actor, assignee_id, due_date, status, completed_at) VALUES
+       ($1, 'Late task', 1, 'customer', 'staff', $2, CURRENT_DATE - 3, 'Not Started', NULL),
+       ($1, 'Soon task', 2, 'customer', 'staff', $3, CURRENT_DATE + 1, 'Not Started', NULL),
+       ($1, 'Done task', 3, 'customer', 'staff', $3, CURRENT_DATE - 5, 'Done',        now())
+     RETURNING id`,
+    [alert.planId, alert.inactiveId, userIds.Staff]
+  );
+  [alert.lateTaskId, alert.soonTaskId, alert.doneTaskId] = t.rows.map((r) => r.id);
+}
+
+const NEW_ROUTES = ['/api/dashboard/overdue', '/api/dashboard/at-risk', '/api/dashboard/inactive-owners'];
+const get = (role, path) => request(app).get(path).set(as(role));
+
+test('alerts: not logged in -> 401, Customer -> 403 on all three', { skip: SKIP }, async () => {
+  for (const path of NEW_ROUTES) {
+    assert.strictEqual((await request(app).get(path)).status, 401, path);
+    assert.strictEqual((await get('Customer', path)).status, 403, path);
+  }
+});
+
+test('overdue: shows the late task with days overdue, not the done or future ones', { skip: SKIP }, async () => {
+  await makeAlertData();
+  const res = await get('Staff', '/api/dashboard/overdue?limit=100');
+  assert.strictEqual(res.status, 200);
+  const late = res.body.tasks.find((t) => t.id === alert.lateTaskId);
+  assert.ok(late, 'late task should be listed');
+  assert.strictEqual(late.daysOverdue, 3);
+  assert.match(late.dueDate, /^\d{4}-\d{2}-\d{2}$/);   // plain date, no time zone
+  assert.strictEqual(late.planId, alert.planId);
+  const ids = res.body.tasks.map((t) => t.id);
+  assert.ok(!ids.includes(alert.soonTaskId), 'a task due tomorrow is not overdue');
+  assert.ok(!ids.includes(alert.doneTaskId), 'a Done task is never overdue');
+});
+
+test('at-risk: the plan is listed with both reasons', { skip: SKIP }, async () => {
+  await makeAlertData();
+  const res = await get('Admin', '/api/dashboard/at-risk?limit=100');
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.atRiskDays, 2);
+  const mine = res.body.plans.find((p) => p.id === alert.planId);
+  assert.ok(mine, 'alert plan should be at risk');
+  assert.strictEqual(mine.overdueTasks, 1);
+  assert.strictEqual(mine.dueSoonTasks, 1);
+  assert.deepStrictEqual(mine.reasons, ['overdue_tasks', 'due_soon_not_started']);
+});
+
+test('inactive-owners: only the task owned by the deactivated user', { skip: SKIP }, async () => {
+  await makeAlertData();
+  const res = await get('Admin', '/api/dashboard/inactive-owners?limit=100');
+  assert.strictEqual(res.status, 200);
+  const late = res.body.tasks.find((t) => t.id === alert.lateTaskId);
+  assert.ok(late, 'task of the deactivated user should be listed');
+  assert.strictEqual(late.assigneeId, alert.inactiveId);
+  assert.strictEqual(late.title, 'Late task');
+  assert.ok(!res.body.tasks.some((t) => t.id === alert.soonTaskId), 'active owner -> not listed');
+});
+
+test('alerts: bad paging -> 400 and no emails in any response', { skip: SKIP }, async () => {
+  for (const path of NEW_ROUTES) {
+    assert.strictEqual((await get('Admin', `${path}?limit=0`)).status, 400, path);
+    assert.strictEqual((await get('Admin', `${path}?page=abc`)).status, 400, path);
+    const ok = await get('Admin', `${path}?limit=100`);
+    assert.strictEqual(ok.status, 200, path);
+    assert.ok(!JSON.stringify(ok.body).includes('@'), path);
+  }
 });
