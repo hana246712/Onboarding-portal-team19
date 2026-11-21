@@ -14,7 +14,9 @@ try {
 if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-hs256-signing';
 }
-const SKIP = process.env.DATABASE_URL ? false : 'DATABASE_URL not set; database tests skipped';
+const SKIP = process.env.DATABASE_URL && process.env.DASHBOARD_DATABASE_URL
+  ? false
+  : 'database URLs not set; database tests skipped';
 
 const request = require('supertest');
 

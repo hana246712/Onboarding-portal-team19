@@ -86,12 +86,12 @@ router.get('/dashboard/plans', requireAuth, requireRole('Admin', 'Staff'), async
 
     // 2. run the query (read-only role)
     const { rows } = await pool.dashboardDb().query(
-      `SELECT p.id, p.title, p.status, p.start_date, u.name AS customer_name,
+      `SELECT p.id, p.title, p.status, to_char(p.start_date, 'YYYY-MM-DD') AS start_date, u.name AS customer_name,
               COUNT(t.id)::int                                            AS total_tasks,
               COUNT(t.id) FILTER (WHERE t.status = 'Done')::int           AS done_tasks,
               COUNT(t.id) FILTER (WHERE t.status <> 'Done'
                                     AND t.due_date < CURRENT_DATE)::int   AS overdue_tasks,
-              MIN(t.due_date) FILTER (WHERE t.status <> 'Done')           AS next_due_date
+                     to_char(MIN(t.due_date) FILTER (WHERE t.status <> 'Done'), 'YYYY-MM-DD') AS next_due_date
          FROM onboarding_plans p
          JOIN users u      ON u.id = p.customer_id
          LEFT JOIN tasks t ON t.plan_id = p.id
