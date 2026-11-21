@@ -134,7 +134,12 @@ test('only Admin can create plans (401 / 403)', { skip: SKIP }, async () => {
 });
 
 test('bad input -> 400 and nothing is saved', { skip: SKIP }, async () => {
-  const before = await pool.db().query('SELECT COUNT(*)::int AS n FROM onboarding_plans');
+  // Count only this file's test users: other test files run at the same time
+  // and create their own plans.
+  const mine = [ids.Customer, ids.Customer2, ids.Inactive, ids.Staff];
+  const countMine = async () =>
+    (await pool.db().query('SELECT COUNT(*)::int AS n FROM onboarding_plans WHERE customer_id = ANY($1)', [mine])).rows[0].n;
+  const before = await countMine();
   const base = { templateId: template.id, customerId: ids.Customer, startDate: START };
   const cases = [
     { ...base, startDate: '2026-02-30' },
@@ -147,8 +152,8 @@ test('bad input -> 400 and nothing is saved', { skip: SKIP }, async () => {
     const res = await createPlan(body);
     assert.strictEqual(res.status, 400, JSON.stringify(body));
   }
-  const after = await pool.db().query('SELECT COUNT(*)::int AS n FROM onboarding_plans');
-  assert.strictEqual(after.rows[0].n, before.rows[0].n);
+  const after = await countMine();
+  assert.strictEqual(after, before);
 });
 
 test('unknown template -> 404; archived template -> 409', { skip: SKIP }, async () => {

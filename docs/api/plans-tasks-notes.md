@@ -1,7 +1,7 @@
 # API contract: Plans, Tasks and Internal Notes
 
 **Service:** Plan & Task Management · **Owner:** Hana Anwar · **Code:** `backend/src/routes/plans.js`
-**Status:** v2 (17 Nov 2026), aligned with proposal 5.1/6.1 and the template code after Hana Fady's review of PR #14.
+**Status:** v2.1 (22 Nov 2026). v2 aligned the contract with proposal 5.1/6.1 after Hana Fady's review of PR #14; v2.1 fills in the exact Week 3 responses (P4, T2, T3, N2) as built.
 **Based on:** proposal sections 5.1 and 6.1, `backend/db/schema.sql`, `backend/db/roles.sql`, `backend/src/routes/templates.js`.
 
 This document is the agreement between the backend, the frontend screens (`frontend/plans/`), the dashboard (Jana) and the template/auth services (Hana Fady). If an endpoint has to change, update this file in the same pull request.
@@ -210,7 +210,7 @@ Response `200`: `{ "items": [Task] }` (not paginated; a plan has at most 100 tas
 
 ---
 
-### P4. Edit or cancel a plan (Week 3)
+### P4. Edit or cancel a plan (Week 3, issue #19)
 
 `PATCH /api/plans/:id` · Admin, Staff
 
@@ -226,17 +226,18 @@ Cancel:
 { "status": "Cancelled", "cancelReason": "Customer postponed the project to Q2." }
 ```
 
+- Send **either** `title` **or** `status` + `cancelReason`, not both (`400`).
 - Only `title` and the change to `Cancelled` are accepted. `Completed` is never set by hand (see auto-complete in T2). Dates and tasks cannot be edited: cancel and create a new plan instead, so due dates stay consistent with the template.
 - `cancelReason` required when cancelling, 1–500 characters.
 - Plan must be `Active` (`409 "Plan is not active"`). Cancellation is final.
 - A cancelled plan is read-only: task changes, reassignment, renames and new notes on it return `409`.
 - Audit `plan_update` or `plan_cancel`.
 
-Response `200`: updated plan.
+Response `200`: `{ "plan": Plan }` (staff view).
 
 ---
 
-### T2. Change a task's status (Week 3)
+### T2. Change a task's status (Week 3, issue #19)
 
 `PATCH /api/tasks/:id`
 
@@ -250,9 +251,11 @@ Response `200`: updated plan.
 |---|---|
 | Not Started → In Progress | owner |
 | In Progress → Done | owner |
-| Done → In Progress (reopen) | **Admin only** |
+| Done → In Progress (reopen) | **Admin only**, for any task (staff or customer) |
 
 Same status → `400 "Task already has this status"`. Anything else → `400 "Status change not allowed"`.
+
+Checks run in this order: task visible to the caller (`404`) → plan cancelled (`409`) → same status (`400`) → allowed change (`400`) → who may make it (`403`).
 
 **Who is the owner:**
 
@@ -267,13 +270,14 @@ Side effects (same transaction):
 - **Auto-complete:** when every task of the plan is `Done`, the plan becomes `Completed` and event `plan.completed` is emitted.
 - **Reopen:** reopening a task in a `Completed` plan sets the plan back to `Active`.
 - Plan `Cancelled` → `409`.
-- Audit `task_status`.
+- Audit `task_status` (`denied` for a 403), plus `plan_complete` or `plan_reopen` when the plan status changes.
+- The task row and its plan row are locked (`FOR UPDATE`) for the whole change, so two tasks finishing at the same moment cannot both miss the auto-complete.
 
 Response `200`: `{ "task": Task, "planStatus": "Completed" }`
 
 ---
 
-### T3. Reassign a task (Week 3)
+### T3. Reassign a task (Week 3, issue #20)
 
 `PATCH /api/tasks/:id/assignment` · Admin, Staff
 
@@ -286,11 +290,11 @@ Response `200`: `{ "task": Task, "planStatus": "Completed" }`
 - Task must not be `Done` (`409`), and the plan must be `Active` (`409`).
 - Audit `task_reassign`. Emit `task.assigned` for the new assignee.
 
-Response `200`: updated task.
+Response `200`: `{ "task": Task }`
 
 ---
 
-### N1. List internal notes (Week 3)
+### N1. List internal notes (Week 3, issue #21)
 
 `GET /api/plans/:id/notes?taskId=140` · Admin, Staff
 
@@ -299,7 +303,7 @@ Response `200`: updated task.
 
 Response `200`: `{ "items": [Note] }`
 
-### N2. Add an internal note (Week 3)
+### N2. Add an internal note (Week 3, issue #21)
 
 `POST /api/plans/:id/notes` · Admin, Staff
 
@@ -312,7 +316,7 @@ Response `200`: `{ "items": [Note] }`
 - Plan must not be `Cancelled` (`409`). Notes on `Completed` plans are allowed (follow-ups).
 - Audit `note_create` with the note id only. The note text is never written to logs or the audit log.
 
-Response `201`: the new note.
+Response `201`: `{ "note": Note }`
 
 ---
 
@@ -335,9 +339,9 @@ Response `201`: the new note.
 | Event | When | Payload | Consumer |
 |---|---|---|---|
 | `task.assigned` | P1 (one per assignee) and T3 | `{ planId, taskId, assigneeId }` (`taskId` null on P1) | Notifications (Jana): in-app `assigned` notification |
-| `plan.completed` | T2 auto-complete | `{ planId, customerId }` | Dashboard / notifications |
+| `plan.completed` | T2 auto-complete | `{ planId, customerId }` | Dashboard (reads plan status); SQS in Weeks 4–5 |
 
-Weeks 2–3: `src/lib/planEvents.js` writes the in-app notification row in the same transaction. Weeks 4–5 (Floci): the same function sends the payload to an emulated Amazon SQS queue (`plan-events`) instead, and the notifier reads from it. The payload never contains emails, note text or tokens.
+Weeks 2–3: `src/lib/planEvents.js` writes the in-app notification row for `task.assigned` in the same transaction. `plan.completed` stores nothing yet (the notifications table has no "completed" type; the dashboard reads the plan status). Weeks 4–5 (Floci): the same function sends the payload to an emulated Amazon SQS queue (`plan-events`) instead, and the notifier reads from it. The payload never contains emails, note text or tokens.
 
 ## 6. Dependencies
 
