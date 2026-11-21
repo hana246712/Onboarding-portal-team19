@@ -4,7 +4,9 @@
 //   GET /api/dashboard/summary   Admin, Staff   counts of plans, tasks and overdue tasks
 //   GET /api/dashboard/plans     Admin, Staff   progress of each plan (?status=&page=&limit=)
 //   GET /api/audit               Admin          security log (?action=&result=&from=&to=&page=&limit=)
-
+//   GET /api/dashboard/overdue          Admin, Staff   late tasks in Active plans
+//   GET /api/dashboard/at-risk          Admin, Staff   plans with overdue or due-soon tasks
+//   GET /api/dashboard/inactive-owners  Admin, Staff   open tasks owned by deactivated users
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth, requireRole } = require('../middleware/auth');
@@ -34,13 +36,16 @@ function readDate(raw, name) {
   return { value: date.toISOString() };
 }
 
+const AT_RISK_DAYS = 2;   // "due soon" = due within this many days
+
+
 router.get('/dashboard/summary', requireAuth, requireRole('Admin', 'Staff'), async (req, res, next) => {
   try {
     const db = pool.dashboardDb();   // read-only role
-     const plans = await db.query(
+    const plans = await db.query(
       `SELECT status, COUNT(*)::int AS count FROM onboarding_plans GROUP BY status`
     );
-     const tasks = await db.query(
+    const tasks = await db.query(
       `SELECT t.status, COUNT(*)::int AS count
          FROM tasks t JOIN onboarding_plans p ON p.id = t.plan_id
         WHERE p.status = 'Active'
@@ -53,12 +58,12 @@ router.get('/dashboard/summary', requireAuth, requireRole('Admin', 'Staff'), asy
         WHERE p.status = 'Active' AND t.status <> 'Done' AND t.due_date < CURRENT_DATE`
     );
 
-        const planCounts = { active: 0, completed: 0, cancelled: 0 };
+    const planCounts = { active: 0, completed: 0, cancelled: 0 };
     for (const row of plans.rows) {
       planCounts[row.status.toLowerCase()] = row.count;
     }
 
-        const taskKeys = { 'Not Started': 'notStarted', 'In Progress': 'inProgress', Done: 'done' };
+    const taskKeys = { 'Not Started': 'notStarted', 'In Progress': 'inProgress', Done: 'done' };
     const taskCounts = { notStarted: 0, inProgress: 0, done: 0 };
     for (const row of tasks.rows) {
       taskCounts[taskKeys[row.status]] = row.count;
@@ -102,9 +107,9 @@ router.get('/dashboard/plans', requireAuth, requireRole('Admin', 'Staff'), async
       [status ?? null, paging.limit, offset]
     );
 
-    // 3. TODO: turn each row into camelCase JSON, and work out progress
-    
-          // 3. turn each row into camelCase JSON, and work out progress
+
+
+    // 3. turn each row into camelCase JSON, and work out progress
     const plans = rows.map((r) => ({
       id: r.id,
       title: r.title,
@@ -117,7 +122,8 @@ router.get('/dashboard/plans', requireAuth, requireRole('Admin', 'Staff'), async
       progress: r.total_tasks ? Math.round((r.done_tasks / r.total_tasks) * 100) : 0,
       nextDueDate: r.next_due_date,
     }));
-    
+
+
 
     return res.json({ page: paging.page, limit: paging.limit, plans });
   } catch (err) {
@@ -171,6 +177,119 @@ router.get('/audit', requireAuth, requireRole('Admin'), async (req, res, next) =
     }));
 
     return res.json({ page: paging.page, limit: paging.limit, entries });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/dashboard/overdue   Admin, Staff   late tasks in Active plans (issue #38)
+router.get('/dashboard/overdue', requireAuth, requireRole('Admin', 'Staff'), async (req, res, next) => {
+  try {
+    const paging = readPaging(req.query);
+    if (paging.error) return res.status(400).json({ error: paging.error });
+
+    const { rows } = await pool.dashboardDb().query(
+      `SELECT t.id, t.title, t.status, to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
+              (CURRENT_DATE - t.due_date)::int AS days_overdue,
+              p.id AS plan_id, p.title AS plan_title, u.name AS assignee_name
+         FROM tasks t
+         JOIN onboarding_plans p ON p.id = t.plan_id
+         LEFT JOIN users u       ON u.id = t.assignee_id
+        WHERE p.status = 'Active' AND t.status <> 'Done' AND t.due_date < CURRENT_DATE
+        ORDER BY t.due_date, t.id
+        LIMIT $1 OFFSET $2`,
+      [paging.limit, (paging.page - 1) * paging.limit]
+    );
+
+    const tasks = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      dueDate: r.due_date,
+      daysOverdue: r.days_overdue,
+      planId: r.plan_id,
+      planTitle: r.plan_title,
+      assigneeName: r.assignee_name,
+    }));
+    return res.json({ page: paging.page, limit: paging.limit, tasks });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/dashboard/at-risk   Admin, Staff   Active plans that need attention (issue #38)
+router.get('/dashboard/at-risk', requireAuth, requireRole('Admin', 'Staff'), async (req, res, next) => {
+  try {
+    const paging = readPaging(req.query);
+    if (paging.error) return res.status(400).json({ error: paging.error });
+
+    const { rows } = await pool.dashboardDb().query(
+      `SELECT p.id, p.title, c.name AS customer_name,
+              COUNT(t.id) FILTER (WHERE t.status <> 'Done' AND t.due_date < CURRENT_DATE)::int AS overdue_tasks,
+              COUNT(t.id) FILTER (WHERE t.status = 'Not Started'
+                                    AND t.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int)::int AS due_soon_tasks
+         FROM onboarding_plans p
+         JOIN users c ON c.id = p.customer_id
+         JOIN tasks t ON t.plan_id = p.id
+        WHERE p.status = 'Active'
+        GROUP BY p.id, c.name
+       HAVING COUNT(t.id) FILTER (WHERE t.status <> 'Done' AND t.due_date < CURRENT_DATE) > 0
+           OR COUNT(t.id) FILTER (WHERE t.status = 'Not Started'
+                                    AND t.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int) > 0
+        ORDER BY overdue_tasks DESC, due_soon_tasks DESC, p.id
+        LIMIT $2 OFFSET $3`,
+      [AT_RISK_DAYS, paging.limit, (paging.page - 1) * paging.limit]
+    );
+
+    const plans = rows.map((r) => {
+      const reasons = [];
+      if (r.overdue_tasks > 0) reasons.push('overdue_tasks');
+      if (r.due_soon_tasks > 0) reasons.push('due_soon_not_started');
+      return {
+        id: r.id,
+        title: r.title,
+        customerName: r.customer_name,
+        overdueTasks: r.overdue_tasks,
+        dueSoonTasks: r.due_soon_tasks,
+        reasons,
+      };
+    });
+    return res.json({ page: paging.page, limit: paging.limit, atRiskDays: AT_RISK_DAYS, plans });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// GET /api/dashboard/inactive-owners   Admin, Staff   open tasks owned by deactivated users (issue #38)
+router.get('/dashboard/inactive-owners', requireAuth, requireRole('Admin', 'Staff'), async (req, res, next) => {
+  try {
+    const paging = readPaging(req.query);
+    if (paging.error) return res.status(400).json({ error: paging.error });
+
+    const { rows } = await pool.dashboardDb().query(
+      `SELECT t.id, t.title, t.status, to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
+              p.id AS plan_id, p.title AS plan_title,
+              u.id AS assignee_id, u.name AS assignee_name
+         FROM tasks t
+         JOIN onboarding_plans p ON p.id = t.plan_id
+         JOIN users u            ON u.id = t.assignee_id
+        WHERE p.status = 'Active' AND t.status <> 'Done' AND u.active = false
+        ORDER BY t.due_date, t.id
+        LIMIT $1 OFFSET $2`,
+      [paging.limit, (paging.page - 1) * paging.limit]
+    );
+
+    const tasks = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      dueDate: r.due_date,
+      planId: r.plan_id,
+      planTitle: r.plan_title,
+      assigneeId: r.assignee_id,
+      assigneeName: r.assignee_name,
+    }));
+    return res.json({ page: paging.page, limit: paging.limit, tasks });
   } catch (err) {
     return next(err);
   }
