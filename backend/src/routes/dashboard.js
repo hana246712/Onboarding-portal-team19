@@ -42,10 +42,10 @@ const AT_RISK_DAYS = 2;   // "due soon" = due within this many days
 router.get('/dashboard/summary', requireAuth, requireRole('Admin', 'Staff'), async (req, res, next) => {
   try {
     const db = pool.dashboardDb();   // read-only role
-     const plans = await db.query(
+    const plans = await db.query(
       `SELECT status, COUNT(*)::int AS count FROM onboarding_plans GROUP BY status`
     );
-     const tasks = await db.query(
+    const tasks = await db.query(
       `SELECT t.status, COUNT(*)::int AS count
          FROM tasks t JOIN onboarding_plans p ON p.id = t.plan_id
         WHERE p.status = 'Active'
@@ -58,12 +58,12 @@ router.get('/dashboard/summary', requireAuth, requireRole('Admin', 'Staff'), asy
         WHERE p.status = 'Active' AND t.status <> 'Done' AND t.due_date < CURRENT_DATE`
     );
 
-        const planCounts = { active: 0, completed: 0, cancelled: 0 };
+    const planCounts = { active: 0, completed: 0, cancelled: 0 };
     for (const row of plans.rows) {
       planCounts[row.status.toLowerCase()] = row.count;
     }
 
-        const taskKeys = { 'Not Started': 'notStarted', 'In Progress': 'inProgress', Done: 'done' };
+    const taskKeys = { 'Not Started': 'notStarted', 'In Progress': 'inProgress', Done: 'done' };
     const taskCounts = { notStarted: 0, inProgress: 0, done: 0 };
     for (const row of tasks.rows) {
       taskCounts[taskKeys[row.status]] = row.count;
@@ -107,9 +107,9 @@ router.get('/dashboard/plans', requireAuth, requireRole('Admin', 'Staff'), async
       [status ?? null, paging.limit, offset]
     );
 
-    
-    
-          // 3. turn each row into camelCase JSON, and work out progress
+
+
+    // 3. turn each row into camelCase JSON, and work out progress
     const plans = rows.map((r) => ({
       id: r.id,
       title: r.title,
@@ -124,7 +124,6 @@ router.get('/dashboard/plans', requireAuth, requireRole('Admin', 'Staff'), async
     }));
 
 
-    
 
     return res.json({ page: paging.page, limit: paging.limit, plans });
   } catch (err) {
@@ -190,7 +189,7 @@ router.get('/dashboard/overdue', requireAuth, requireRole('Admin', 'Staff'), asy
     if (paging.error) return res.status(400).json({ error: paging.error });
 
     const { rows } = await pool.dashboardDb().query(
-          `SELECT t.id, t.title, t.status, to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
+      `SELECT t.id, t.title, t.status, to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
               (CURRENT_DATE - t.due_date)::int AS days_overdue,
               p.id AS plan_id, p.title AS plan_title, u.name AS assignee_name
          FROM tasks t
@@ -268,7 +267,7 @@ router.get('/dashboard/inactive-owners', requireAuth, requireRole('Admin', 'Staf
     if (paging.error) return res.status(400).json({ error: paging.error });
 
     const { rows } = await pool.dashboardDb().query(
-            `SELECT t.id, t.title, t.status, to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
+      `SELECT t.id, t.title, t.status, to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
               p.id AS plan_id, p.title AS plan_title,
               u.id AS assignee_id, u.name AS assignee_name
          FROM tasks t
@@ -280,7 +279,7 @@ router.get('/dashboard/inactive-owners', requireAuth, requireRole('Admin', 'Staf
       [paging.limit, (paging.page - 1) * paging.limit]
     );
 
-        const tasks = rows.map((r) => ({
+    const tasks = rows.map((r) => ({
       id: r.id,
       title: r.title,
       status: r.status,
