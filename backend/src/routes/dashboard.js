@@ -7,6 +7,7 @@
 //   GET /api/dashboard/overdue          Admin, Staff   late tasks in Active plans
 //   GET /api/dashboard/at-risk          Admin, Staff   plans with overdue or due-soon tasks
 //   GET /api/dashboard/inactive-owners  Admin, Staff   open tasks owned by deactivated users
+//   GET   /api/jobs/notifications        Vercel Cron   daily overdue / at-risk notifications (CRON_SECRET)
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth, requireRole } = require('../middleware/auth');
@@ -14,6 +15,9 @@ const { parseId } = require('../lib/templateRules');
 const router = express.Router();
 
 const PLAN_STATUSES = ['Active', 'Completed', 'Cancelled'];
+
+const crypto = require('node:crypto');
+const { recordAudit } = require('../lib/audit');
 
 // Reads page and limit from the URL. Returns { page, limit } or { error } for a 400.
 function readPaging(query) {
@@ -383,6 +387,65 @@ router.patch('/notifications/:id/read', requireAuth, async (req, res, next) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Notification not found' });
     return res.json({ id: rows[0].id, read: true, readAt: rows[0].read_at });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ---- Daily notification job (issue #41) -----------------------------------------
+// Called once a day by Vercel Cron with "Authorization: Bearer <CRON_SECRET>".
+// Runs as the notifier role: it can read plans/tasks and only ADD notifications.
+// The notifications_once_per_day index + ON CONFLICT DO NOTHING mean a second
+// run on the same day adds nothing.
+
+// Compares the header with the secret in constant time (no timing leaks).
+// Fails closed: no secret configured, or a short one, means nobody gets in.
+function cronSecretOk(req) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 32) return false;
+  const given = Buffer.from(req.get('authorization') || '');
+  const expected = Buffer.from(`Bearer ${secret}`);
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
+}
+
+router.get('/jobs/notifications', async (req, res, next) => {
+  try {
+    if (!cronSecretOk(req)) {
+      await recordAudit({ actorId: null, action: 'job_denied', entity: 'job', entityId: 'notifications', result: 'denied', ip: req.ip });
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const db = pool.notifierDb();
+
+    // 1. overdue: the owner of each late task (staff task -> assignee, customer task -> the plan's customer)
+    const overdue = await db.query(
+      `INSERT INTO notifications (user_id, plan_id, task_id, type, channel)
+       SELECT u.id, p.id, t.id, 'overdue', 'in_app'
+         FROM tasks t
+         JOIN onboarding_plans p ON p.id = t.plan_id
+         JOIN users u ON u.id = CASE WHEN t.actor = 'customer' THEN p.customer_id ELSE t.assignee_id END
+        WHERE p.status = 'Active' AND t.status <> 'Done' AND t.due_date < CURRENT_DATE AND u.active
+       ON CONFLICT DO NOTHING`
+    );
+
+    // 2. at_risk: every active Admin, once per at-risk plan (same rule as /dashboard/at-risk)
+    const atRisk = await db.query(
+      `INSERT INTO notifications (user_id, plan_id, task_id, type, channel)
+       SELECT a.id, p.id, NULL, 'at_risk', 'in_app'
+         FROM onboarding_plans p
+         JOIN users a ON a.role = 'Admin' AND a.active
+        WHERE p.status = 'Active'
+          AND EXISTS (
+                SELECT 1 FROM tasks t
+                 WHERE t.plan_id = p.id
+                   AND (   (t.status <> 'Done' AND t.due_date < CURRENT_DATE)
+                        OR (t.status = 'Not Started' AND t.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int)))
+       ON CONFLICT DO NOTHING`,
+      [AT_RISK_DAYS]
+    );
+
+    const result = { overdue: overdue.rowCount, atRisk: atRisk.rowCount };
+    await recordAudit({ actorId: null, action: 'job_notifications', entity: 'job', entityId: `overdue=${result.overdue},at_risk=${result.atRisk}`, result: 'allowed', ip: req.ip });
+    return res.json(result);
   } catch (err) {
     return next(err);
   }
