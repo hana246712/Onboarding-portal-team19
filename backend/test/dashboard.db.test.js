@@ -15,6 +15,12 @@ try {
 if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-hs256-signing';
 }
+// The daily job needs a CRON_SECRET of at least 32 characters (it refuses otherwise).
+if (!process.env.CRON_SECRET || process.env.CRON_SECRET.length < 32) {
+  process.env.CRON_SECRET = 'test-cron-secret-that-is-long-enough-1234567890';
+}
+const CRON = process.env.CRON_SECRET;
+
 const SKIP = process.env.DATABASE_URL && process.env.DASHBOARD_DATABASE_URL
   ? false
   : 'database URLs not set; database tests skipped';
@@ -369,4 +375,88 @@ test('notifications: read-all marks only my own', { skip: SKIP }, async () => {
   const staff = await get('Staff', '/api/notifications?limit=100');
   const read = staff.body.notifications.find((n) => n.id === notes.staffRead);
   assert.ok(read.read);
+});
+// ---- Daily notification job (#41) ----------------------------------------------
+
+// Extra late tasks on the alert plan, made once:
+//   staffLate    = staff task, due 4 days ago, owner = active Staff  -> Staff gets "overdue"
+//   customerLate = customer task, due 2 days ago                     -> the plan's Customer gets "overdue"
+// (the existing "Late task" belongs to the deactivated user          -> nobody gets "overdue" for it)
+const job = { staffLate: null, customerLate: null };
+
+async function makeJobData() {
+  if (job.staffLate) return;
+  await makeAlertData();
+  const { rows } = await pool.db().query(
+    `INSERT INTO tasks (plan_id, title, position, visibility, actor, assignee_id, due_date) VALUES
+       ($1, 'Staff late task',    5, 'customer', 'staff',    $2,   CURRENT_DATE - 4),
+       ($1, 'Customer late task', 6, 'customer', 'customer', NULL, CURRENT_DATE - 2)
+     RETURNING id`,
+    [alert.planId, userIds.Staff]
+  );
+  [job.staffLate, job.customerLate] = rows.map((r) => r.id);
+}
+
+const runJob = (header) => {
+  const req = request(app).get('/api/jobs/notifications');
+  return header === undefined ? req : req.set('Authorization', header);
+};
+
+// notifications of one type for one user on the alert plan
+async function jobNotes(userId, type) {
+  const { rows } = await pool.db().query(
+    `SELECT task_id FROM notifications WHERE user_id = $1 AND plan_id = $2 AND type = $3 AND channel = 'in_app'`,
+    [userId, alert.planId, type]
+  );
+  return rows.map((r) => r.task_id);
+}
+
+test('job: no secret, a wrong secret or a nearly-right secret -> 401, and it is audited', { skip: SKIP }, async () => {
+  assert.strictEqual((await runJob()).status, 401);
+  assert.strictEqual((await runJob('Bearer wrong')).status, 401);
+  assert.strictEqual((await runJob(`Bearer ${CRON.slice(0, -1)}`)).status, 401);
+  assert.strictEqual((await runJob(CRON)).status, 401);   // missing "Bearer "
+  // a logged-in Admin's token is not the cron secret either
+  assert.strictEqual((await runJob(`Bearer ${tokens.Admin}`)).status, 401);
+
+  const { rows } = await pool.db().query(
+    `SELECT COUNT(*)::int AS n FROM audit_log
+      WHERE action = 'job_denied' AND result = 'denied' AND created_at > now() - interval '5 minutes'`
+  );
+  assert.ok(rows[0].n >= 5);
+});
+
+test('job: creates overdue notices for the owners and at-risk notices for Admins', { skip: SKIP }, async () => {
+  await makeJobData();
+  const res = await runJob(`Bearer ${CRON}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(typeof res.body.overdue, 'number');
+  assert.strictEqual(typeof res.body.atRisk, 'number');
+
+  assert.ok((await jobNotes(userIds.Staff, 'overdue')).includes(job.staffLate), 'Staff owner notified');
+  assert.ok((await jobNotes(userIds.Customer, 'overdue')).includes(job.customerLate), 'Customer notified for a customer task');
+  assert.deepStrictEqual(await jobNotes(alert.inactiveId, 'overdue'), [], 'deactivated user gets nothing');
+  assert.ok((await jobNotes(userIds.Admin, 'at_risk')).length === 1, 'Admin gets one at-risk notice for the plan');
+});
+
+test('job: a second run on the same day adds nothing new', { skip: SKIP }, async () => {
+  await makeJobData();
+  await runJob(`Bearer ${CRON}`);
+  const count = async () => (await pool.db().query(
+    `SELECT COUNT(*)::int AS n FROM notifications WHERE plan_id = $1 AND type IN ('overdue', 'at_risk')`,
+    [alert.planId]
+  )).rows[0].n;
+  const before = await count();
+  const res = await runJob(`Bearer ${CRON}`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(await count(), before);
+});
+
+test('job: every run is written to the audit log', { skip: SKIP }, async () => {
+  const { rows } = await pool.db().query(
+    `SELECT entity_id FROM audit_log
+      WHERE action = 'job_notifications' AND result = 'allowed' AND created_at > now() - interval '5 minutes'`
+  );
+  assert.ok(rows.length >= 1);
+  assert.match(rows[0].entity_id, /^overdue=\d+,at_risk=\d+$/);
 });
