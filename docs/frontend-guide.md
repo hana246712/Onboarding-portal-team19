@@ -10,6 +10,7 @@ Owner of the shared login code: Hana Fady (issue #10). Read this before building
 | `frontend/home.html` + `js/home.js` | First page after login. Greets the user and lists the pages their role can open. |
 | `frontend/js/auth.js` | Shared session helpers: `auth.requireLogin(roles)`, `auth.getUser()`, `auth.logout()`, and the page list `PAGES` used for the menu. |
 | `frontend/js/api.js` | `api.get / post / put / patch(path, body)`. Adds the token, returns the JSON, and throws an `Error` with `.status` (and `.retryAfter` on 429). A 401 on a logged-in request sends the user back to the login page automatically. |
+| `frontend/js/ui.js` | Optional helpers: `ui.el(tag, props, ...children)` builds elements safely (always text, never HTML), plus `ui.showMessage`, `ui.formatDate`, `ui.busy` (disables a button while saving) and `ui.debounce` (search boxes). Load it after `api.js` if you use it. Used by `templates.html` and `users.html`. |
 
 ## Make a new page in 4 steps
 
