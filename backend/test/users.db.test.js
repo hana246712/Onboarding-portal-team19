@@ -62,8 +62,35 @@ before(async () => {
   await insertUser('customer', 'Customer');
 });
 
+const planIds = [];
+const templateIdsToDelete = [];
+
+// A small Active plan for `customerId` with one open staff task assigned to `staffId`.
+async function makePlan(customerId, staffId, { planStatus = 'Active', taskStatus = 'Not Started' } = {}) {
+  const tpl = await pool.db().query(
+    `INSERT INTO templates (title, created_by) VALUES ($1, $2) RETURNING id`,
+    [`Role test ${run}`, ids.admin]
+  );
+  templateIdsToDelete.push(tpl.rows[0].id);
+  const plan = await pool.db().query(
+    `INSERT INTO onboarding_plans (template_id, template_version, customer_id, title, start_date, status, cancel_reason, created_by)
+     VALUES ($1, 1, $2, $3, CURRENT_DATE, $4, $5, $6) RETURNING id`,
+    [tpl.rows[0].id, customerId, `Role test plan ${run}`, planStatus,
+      planStatus === 'Cancelled' ? 'test' : null, ids.admin]
+  );
+  planIds.push(plan.rows[0].id);
+  await pool.db().query(
+    `INSERT INTO tasks (plan_id, title, position, visibility, actor, assignee_id, due_date, status, completed_at)
+     VALUES ($1, 'Internal check', 1, 'internal', 'staff', $2, CURRENT_DATE, $3, $4)`,
+    [plan.rows[0].id, staffId, taskStatus, taskStatus === 'Done' ? new Date() : null]
+  );
+  return plan.rows[0].id;
+}
+
 after(async () => {
   if (SKIP) return;
+  if (planIds.length) await pool.db().query('DELETE FROM onboarding_plans WHERE id = ANY($1)', [planIds]);
+  if (templateIdsToDelete.length) await pool.db().query('DELETE FROM templates WHERE id = ANY($1)', [templateIdsToDelete]);
   await pool.db().query('DELETE FROM login_attempts WHERE email = ANY($1)', [emails]);
   await pool.db().query('UPDATE users SET active = false WHERE email = ANY($1)', [emails]);
   await pool.db().end();
@@ -210,4 +237,65 @@ test('role changes and deactivations are written to the audit log', { skip: SKIP
 test('there is no delete endpoint for users', { skip: SKIP }, async () => {
   const res = await request(app).delete(`/api/users/${ids.customer}`).set(as('admin'));
   assert.strictEqual(res.status, 404);
+});
+
+// ---- role change while the user owns work (review of PR #32) -----------------------
+
+test('Staff with open staff tasks on an active plan cannot become Customer -> 409', { skip: SKIP }, async () => {
+  const { body: staff } = await createUser('owner-staff', 'Staff');
+  const { body: customer } = await createUser('owner-cust', 'Customer');
+  await makePlan(customer.id, staff.id);
+
+  const res = await request(app).patch(`/api/users/${staff.id}`).set(as('admin')).send({ role: 'Customer' });
+  assert.strictEqual(res.status, 409);
+  assert.match(res.body.error, /1 open staff task/);
+  const { rows } = await pool.db().query('SELECT role FROM users WHERE id = $1', [staff.id]);
+  assert.strictEqual(rows[0].role, 'Staff');
+
+  // Staff -> Admin keeps them on the staff side, so it is allowed.
+  const promote = await request(app).patch(`/api/users/${staff.id}`).set(as('admin')).send({ role: 'Admin' });
+  assert.strictEqual(promote.status, 200);
+  await request(app).patch(`/api/users/${staff.id}`).set(as('admin')).send({ role: 'Staff' });
+});
+
+test('finished work does not block: Done tasks and Completed or Cancelled plans', { skip: SKIP }, async () => {
+  const { body: staff } = await createUser('done-staff', 'Staff');
+  const { body: customer } = await createUser('done-cust', 'Customer');
+  await makePlan(customer.id, staff.id, { taskStatus: 'Done' });
+  await makePlan(customer.id, staff.id, { planStatus: 'Cancelled' });
+  const res = await request(app).patch(`/api/users/${staff.id}`).set(as('admin')).send({ role: 'Customer' });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.role, 'Customer');
+});
+
+test('customer of an active plan cannot become Staff or Admin -> 409', { skip: SKIP }, async () => {
+  const { body: staff } = await createUser('cust-owner-staff', 'Staff');
+  const { body: customer } = await createUser('cust-owner', 'Customer');
+  await makePlan(customer.id, staff.id);
+  for (const role of ['Staff', 'Admin']) {
+    const res = await request(app).patch(`/api/users/${customer.id}`).set(as('admin')).send({ role });
+    assert.strictEqual(res.status, 409, role);
+    assert.match(res.body.error, /customer of 1 active onboarding plan/);
+  }
+});
+
+test('refused role changes are audited as denied', { skip: SKIP }, async () => {
+  const { body: staff } = await createUser('audit-owner-staff', 'Staff');
+  const { body: customer } = await createUser('audit-owner-cust', 'Customer');
+  await makePlan(customer.id, staff.id);
+  await request(app).patch(`/api/users/${staff.id}`).set(as('admin')).send({ role: 'Customer' });
+  const { rows } = await pool.db().query(
+    `SELECT action, result FROM audit_log WHERE entity = 'user' AND entity_id = $1 AND result = 'denied'`,
+    [String(staff.id)]
+  );
+  assert.deepStrictEqual(rows, [{ action: 'user_update', result: 'denied' }]);
+});
+
+test('deactivating a user who owns open work is still allowed', { skip: SKIP }, async () => {
+  const { body: staff } = await createUser('deact-owner', 'Staff');
+  const { body: customer } = await createUser('deact-owner-cust', 'Customer');
+  await makePlan(customer.id, staff.id);
+  const res = await request(app).patch(`/api/users/${staff.id}`).set(as('admin')).send({ active: false });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.active, false);
 });
