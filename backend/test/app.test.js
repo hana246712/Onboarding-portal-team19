@@ -37,6 +37,13 @@ test('CORS allows the configured frontend origin', async () => {
   assert.strictEqual(res.headers['access-control-allow-origin'], 'https://frontend.example.com');
 });
 
+test('CORS lets the frontend read Retry-After (login lockout time)', async () => {
+  const res = await request(app)
+    .get('/api/health')
+    .set('Origin', 'https://frontend.example.com');
+  assert.match(res.headers['access-control-expose-headers'] || '', /Retry-After/);
+});
+
 test('CORS does not allow other origins', async () => {
   const res = await request(app)
     .get('/api/health')

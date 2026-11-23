@@ -28,6 +28,8 @@ app.use(
       return callback(null, false);
     },
     allowedHeaders: ['Content-Type', 'Authorization'],
+    // Lets the login page read how long a lockout lasts (429 + Retry-After).
+    exposedHeaders: ['Retry-After'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   })
 );
