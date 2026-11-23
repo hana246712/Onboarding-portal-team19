@@ -11,7 +11,8 @@
     "dev": "node --watch local.js",
     "start": "node local.js",
     "test": "node --test",
-    "seed": "node db/seed.js"
+    "seed": "node db/seed.js",
+    "postman": "node scripts/postman.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
