@@ -55,3 +55,26 @@ test('X-Powered-By header is not sent', async () => {
   const res = await request(app).get('/api/health');
   assert.strictEqual(res.headers['x-powered-by'], undefined);
 });
+
+test('security headers are sent on every API response (#12)', async () => {
+  for (const path of ['/api/health', '/api/does-not-exist']) {
+    const res = await request(app).get(path);
+    assert.strictEqual(res.headers['x-content-type-options'], 'nosniff', path);
+    assert.strictEqual(res.headers['x-frame-options'], 'DENY', path);
+    assert.strictEqual(res.headers['referrer-policy'], 'no-referrer', path);
+    assert.strictEqual(res.headers['cache-control'], 'no-store', path);
+    assert.match(res.headers['content-security-policy'] || '', /default-src 'none'/, path);
+    assert.match(res.headers['content-security-policy'] || '', /frame-ancestors 'none'/, path);
+    assert.match(res.headers['strict-transport-security'] || '', /max-age=\d+/, path);
+  }
+});
+
+test('security headers are also sent on errors (malformed JSON)', async () => {
+  const res = await request(app)
+    .post('/api/anything')
+    .set('Content-Type', 'application/json')
+    .send('{"broken":');
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual(res.headers['x-content-type-options'], 'nosniff');
+  assert.strictEqual(res.headers['cache-control'], 'no-store');
+});
