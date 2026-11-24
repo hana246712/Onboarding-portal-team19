@@ -196,7 +196,12 @@ expect_decision "team19-db-admin: modify another database" implicitDeny team19-d
 
 # =====================================================================
 section "6. Database rules (backend/db/check.sql on RDS)"
-CHECK_OUT="$(master_psql -f "$ROOT/backend/db/check.sql" 2>&1)"
+# check.sql switches into each role with SET ROLE, which needs membership.
+# Grant it for this one session only and take it back at the end: a
+# lasting membership would make the master user IAM-only (see setup.sh).
+CHECK_OUT="$(master_psql -c "GRANT app_rw, dashboard_ro, notifier TO $MASTER_USER" \
+                         -f "$ROOT/backend/db/check.sql" \
+                         -c "REVOKE app_rw, dashboard_ro, notifier FROM $MASTER_USER" 2>&1)"
 CHECK_PASS="$(grep -c '^PASS' <<<"$CHECK_OUT")"
 CHECK_FAIL="$(grep -c '^FAIL' <<<"$CHECK_OUT")"
 if [ "$CHECK_FAIL" = 0 ] && [ "$CHECK_PASS" -ge 26 ]; then

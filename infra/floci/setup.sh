@@ -129,7 +129,14 @@ else
 fi
 
 log "3/4 Switch the app roles to IAM login (rds_iam)"
-master_psql <<'SQL'
+master_psql <<SQL
+-- roles.sql lets the owner switch into the app roles (Neon needs that for
+-- check.sql). On RDS, membership in rds_iam counts even when it is
+-- indirect, so the master user would become IAM-only too and lock itself
+-- out. Take the app roles away from the master first; check.sql gets them
+-- back only for its own session (see test.sh).
+REVOKE app_rw, dashboard_ro, notifier FROM $MASTER_USER;
+
 -- Members of rds_iam can only log in with an IAM token: RDS stops
 -- accepting their passwords. So a leaked connection string with a
 -- password in it is useless.
