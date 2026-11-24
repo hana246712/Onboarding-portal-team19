@@ -58,5 +58,6 @@ docker rm -f floci        # when finished (also remove the team19-db container F
 
 - The access key `test` is Floci's **bootstrap administrator** (it bypasses enforcement). `setup.sh` uses it only to build things; the tests act as the IAM roles. In real AWS this would be the deployer's own identity, never long-lived keys in code.
 - In real AWS the app would get its role from where it runs (ECS task role or Lambda execution role) instead of calling `sts:AssumeRole`; the trust policy here lets the account assume the roles so the tests can act as each part of the app.
+- Floci 2.5 evaluates RDS **API** calls against `Resource: "*"` (its IAM resource table lists RDS as not read yet). So `team19-db-admin`'s permissions that are scoped to `team19-db` only (snapshots, settings) are proven with `iam simulate-principal-policy` (section 5) instead of a live call. On real AWS the same policy works as written. Database **logins** (`rds-db:connect`) are scoped per DB user and enforced live.
 - RDS IAM tokens last 15 minutes and are tied to the endpoint (host, port, region) and DB user they were made for.
 - Floci is an emulator: it checks IAM policies and RDS IAM logins the way AWS documents them, but it is not a substitute for testing on a real AWS account.

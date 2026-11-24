@@ -176,7 +176,10 @@ expect refused "team19-api cannot delete the database"            '' as_role tea
 expect refused "team19-api cannot read the master password secret" '' as_role team19-api aws secretsmanager get-secret-value --secret-id "$SECRET_ARN"
 expect refused "team19-dashboard cannot change the database"      '' as_role team19-dashboard aws rds modify-db-instance --db-instance-identifier "$DB_INSTANCE_ID" --backup-retention-period 0 --apply-immediately
 expect ok      "team19-db-admin can read the database settings"   '' as_role team19-db-admin aws rds describe-db-instances --db-instance-identifier "$DB_INSTANCE_ID" --query 'DBInstances[0].DBInstanceStatus' --output text
-expect ok      "team19-db-admin can take a backup snapshot"       '' as_role team19-db-admin aws rds create-db-snapshot --db-instance-identifier "$DB_INSTANCE_ID" --db-snapshot-identifier "$DB_INSTANCE_ID-test-$(date +%s)" --query 'DBSnapshot.Status' --output text
+# Floci 2.5 checks RDS API calls against Resource "*" (it does not read RDS
+# resource ARNs yet), so the db-admin's snapshot permission, which is scoped
+# to team19-db only, is proven with the policy simulator in section 5
+# (allowed for team19-db, implicitly denied for any other database).
 expect refused "team19-db-admin cannot delete the database (explicit deny)" '' as_role team19-db-admin aws rds delete-db-instance --db-instance-identifier "$DB_INSTANCE_ID" --skip-final-snapshot
 expect refused "team19-db-admin cannot give itself more rights"   '' as_role team19-db-admin aws iam put-role-policy --role-name team19-db-admin --policy-name grab --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}'
 expect refused "Even the administrator cannot delete it: deletion protection" 'protect' aws rds delete-db-instance --db-instance-identifier "$DB_INSTANCE_ID" --skip-final-snapshot
