@@ -46,6 +46,14 @@
       }
     }
 
+    // The width is set through element.style (allowed by the site's Content
+    // Security Policy); a style="..." attribute would be blocked by it.
+    function miniBar(percent) {
+      const bar = el('span', { className: 'progress-bar' });
+      bar.style.width = `${percent}%`;
+      return el('span', { className: 'progress mini', 'aria-hidden': 'true' }, bar);
+    }
+
     function renderRows(plans) {
       const body = $('plan-rows');
       clear(body);
@@ -55,10 +63,7 @@
           el('td', {}, el('a', { href: `plans.html?id=${p.id}` }, p.title)),
           el('td', {}, p.customer.name),
           el('td', {}, el('span', { className: `badge ${v.statusClass(p.status)}` }, p.status)),
-          el('td', {},
-            el('span', { className: 'progress mini', 'aria-hidden': 'true' },
-              el('span', { className: 'progress-bar', style: `display:block;width:${percent}%` })),
-            `${p.progress.done} of ${p.progress.total}`),
+          el('td', {}, miniBar(percent), `${p.progress.done} of ${p.progress.total}`),
           el('td', {}, v.formatDay(p.startDate))));
       }
       $('list-empty').hidden = plans.length > 0;
