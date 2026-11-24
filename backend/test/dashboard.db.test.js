@@ -82,9 +82,7 @@ test('summary: Admin and Staff -> 200 with the right shape', { skip: SKIP }, asy
 });
 
 test('summary: counts include a newly added plan with 3 tasks', { skip: SKIP }, async () => {
-  
-
-  // a template, a plan and 3 tasks: 1 Done, 1 overdue (Not Started, due 2 days ago), 1 In Progress
+ // a template, a plan and 3 tasks: 1 Done, 1 overdue (Not Started, due 2 days ago), 1 In Progress
   const tpl = await pool.db().query(
     `INSERT INTO templates (title, created_by) VALUES ($1, $2) RETURNING id`,
     [`Dashboard test ${run}`, userIds.Admin]
@@ -117,6 +115,7 @@ test('summary: counts include a newly added plan with 3 tasks', { skip: SKIP }, 
     assert.ok(Number.isInteger(n) && n >= 0, 'every count is a whole number, never negative');
   }
 });
+
 test('summary: no emails in the response', { skip: SKIP }, async () => {
   const res = await summary('Admin');
   assert.ok(!JSON.stringify(res.body).includes('@'));
@@ -376,6 +375,7 @@ test('notifications: read-all marks only my own', { skip: SKIP }, async () => {
   const read = staff.body.notifications.find((n) => n.id === notes.staffRead);
   assert.ok(read.read);
 });
+
 // ---- Daily notification job (#41) ----------------------------------------------
 
 // Extra late tasks on the alert plan, made once:

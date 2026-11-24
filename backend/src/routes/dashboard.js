@@ -8,16 +8,19 @@
 //   GET /api/dashboard/at-risk          Admin, Staff   plans with overdue or due-soon tasks
 //   GET /api/dashboard/inactive-owners  Admin, Staff   open tasks owned by deactivated users
 //   GET   /api/jobs/notifications        Vercel Cron   daily overdue / at-risk notifications (CRON_SECRET)
+
 const express = require('express');
 const pool = require('../db/pool');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const crypto = require('node:crypto');
+const { recordAudit } = require('../lib/audit');
 const { parseId } = require('../lib/templateRules');
+
 const router = express.Router();
 
 const PLAN_STATUSES = ['Active', 'Completed', 'Cancelled'];
 
-const crypto = require('node:crypto');
-const { recordAudit } = require('../lib/audit');
+
 
 // Reads page and limit from the URL. Returns { page, limit } or { error } for a 400.
 function readPaging(query) {
