@@ -53,6 +53,7 @@ Actors: Admin, Staff, Customer (all logged in), and an attacker who is either ou
 | E2 | Privilege escalation through the users API (Staff makes themselves Admin) | Whole `/api/users` API is Admin-only; role is read from the database, not the token. | ✅ `test/security.db.test.js` |
 | E3 | Account enumeration through the Admin API | Only an Admin can list users or learn that an email exists (`409` on create). | ✅ accepted |
 | E4 | Two Admins edit or reorder the same template at once | Edit and reorder lock the template row (`FOR UPDATE`) and bump the version in one transaction. | ✅ `src/routes/templates.js` |
+| E5 | A role change leaves work with the wrong person: Staff → Customer while assigned open staff tasks (no one can complete them), or Customer → Staff/Admin while the customer of an Active plan (they could then read the internal tasks and staff notes of their own plan) | `PATCH /api/users/:id` refuses both with `409` and a message saying what to do first (reassign the tasks / complete or cancel the plan); the refusal is audited. Deactivation is still allowed, and the open work shows up on the dashboard's inactive-owner list. Found in Hana Anwar's review of PR #32 | ✅ `src/routes/users.js`, `test/users.db.test.js` |
 
 ## 4. Known limits (residual risk) to discuss in the review (#12)
 

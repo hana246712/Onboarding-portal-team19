@@ -8,7 +8,9 @@
 // Errors: 400 bad input, 401 not logged in, 403 not Admin, 404 unknown user,
 //         409 email already used, or a change that would lock everyone out
 //         (changing your own role, deactivating yourself, removing the last
-//         active Admin).
+//         active Admin), or a role change while the user still owns work
+//         (open staff tasks -> can't become Customer; customer of an Active
+//         plan -> can't become Staff/Admin).
 //
 // Rules from the proposal: accounts are created only by an Admin (no
 // self-registration), users are never deleted (audit entries point to
@@ -155,6 +157,44 @@ router.patch('/users/:id', requireAuth, requireRole('Admin'), async (req, res, n
         );
         if (others.rows.length === 0) {
           return { status: 409, error: 'At least one active Admin is required' };
+        }
+      }
+
+      // A role change must not leave work with someone who can no longer do
+      // it, or let a customer read the staff side of their own plan
+      // (review of PR #32). Deactivation is still allowed: the dashboard's
+      // "inactive owners" list shows that work for reassignment.
+      if (roleChanges) {
+        const wasStaffSide = current.role !== 'Customer';
+        const willBeStaffSide = changes.role !== 'Customer';
+        if (wasStaffSide && !willBeStaffSide) {
+          const open = await client.query(
+            `SELECT COUNT(*)::int AS n
+               FROM tasks t JOIN onboarding_plans p ON p.id = t.plan_id
+              WHERE t.assignee_id = $1 AND t.actor = 'staff'
+                AND t.status <> 'Done' AND p.status = 'Active'`,
+            [id]
+          );
+          if (open.rows[0].n > 0) {
+            const n = open.rows[0].n;
+            return {
+              status: 409,
+              error: `This user still has ${n} open staff task${n === 1 ? '' : 's'} on active plans. Reassign ${n === 1 ? 'it' : 'them'} before making them a Customer.`,
+            };
+          }
+        }
+        if (!wasStaffSide && willBeStaffSide) {
+          const plans = await client.query(
+            `SELECT COUNT(*)::int AS n FROM onboarding_plans WHERE customer_id = $1 AND status = 'Active'`,
+            [id]
+          );
+          if (plans.rows[0].n > 0) {
+            const n = plans.rows[0].n;
+            return {
+              status: 409,
+              error: `This user is the customer of ${n} active onboarding plan${n === 1 ? '' : 's'}. Complete or cancel ${n === 1 ? 'it' : 'them'} before giving them a staff role.`,
+            };
+          }
         }
       }
 
