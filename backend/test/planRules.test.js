@@ -9,6 +9,12 @@ const {
   validatePlanListQuery,
   validateTaskListQuery,
   escapeLike,
+  transitionRule,
+  validateTaskStatus,
+  validatePlanUpdate,
+  validateAssignment,
+  validateNote,
+  validateNoteListQuery,
 } = require('../src/lib/planRules');
 
 const NOW = new Date('2026-11-17T12:00:00Z');
@@ -98,4 +104,60 @@ test('task list query: status, assigneeId and overdue', () => {
 test('escapeLike makes % and _ match literally', () => {
   assert.strictEqual(escapeLike('50%_off\\'), '50\\%\\_off\\\\');
   assert.strictEqual(escapeLike('acme'), 'acme');
+});
+
+// ---- Week 3 (issues #19, #20, #21) ----------------------------------------------
+
+test('status table: forward one step by the owner, reopen by Admin only', () => {
+  assert.strictEqual(transitionRule('Not Started', 'In Progress'), 'owner');
+  assert.strictEqual(transitionRule('In Progress', 'Done'), 'owner');
+  assert.strictEqual(transitionRule('Done', 'In Progress'), 'admin');
+  // everything else is not allowed
+  assert.strictEqual(transitionRule('Not Started', 'Done'), null);
+  assert.strictEqual(transitionRule('In Progress', 'Not Started'), null);
+  assert.strictEqual(transitionRule('Done', 'Not Started'), null);
+  assert.strictEqual(transitionRule('Done', 'Done'), null);
+});
+
+test('task status body', () => {
+  assert.deepStrictEqual(validateTaskStatus({ status: 'Done' }).value, { status: 'Done' });
+  for (const body of [{}, { status: 'done' }, { status: 'Finished' }, null, []]) {
+    assert.ok(validateTaskStatus(body).error, JSON.stringify(body));
+  }
+});
+
+test('plan update: rename or cancel, never both', () => {
+  assert.deepStrictEqual(validatePlanUpdate({ title: '  New name ' }).value, { action: 'rename', title: 'New name' });
+  assert.deepStrictEqual(
+    validatePlanUpdate({ status: 'Cancelled', cancelReason: ' Postponed ' }).value,
+    { action: 'cancel', cancelReason: 'Postponed' }
+  );
+  assert.ok(validatePlanUpdate({}).error);
+  assert.ok(validatePlanUpdate({ title: 'a', status: 'Cancelled', cancelReason: 'b' }).error);
+  assert.ok(validatePlanUpdate({ title: '  ' }).error);
+  assert.ok(validatePlanUpdate({ title: 'x'.repeat(151) }).error);
+  assert.ok(validatePlanUpdate({ status: 'Completed' }).error, 'plans complete automatically');
+  assert.ok(validatePlanUpdate({ status: 'Active' }).error);
+  assert.ok(validatePlanUpdate({ status: 'Cancelled' }).error, 'reason required');
+  assert.ok(validatePlanUpdate({ status: 'Cancelled', cancelReason: 'x'.repeat(501) }).error);
+});
+
+test('assignment body', () => {
+  assert.deepStrictEqual(validateAssignment({ assigneeId: 8 }).value, { assigneeId: 8 });
+  for (const assigneeId of [undefined, 0, '8', 1.5, null]) {
+    assert.ok(validateAssignment({ assigneeId }).error, String(assigneeId));
+  }
+});
+
+test('note body: trimmed text 1-2000 characters, optional taskId', () => {
+  assert.deepStrictEqual(validateNote({ body: ' Call first ' }).value, { body: 'Call first', taskId: null });
+  assert.deepStrictEqual(validateNote({ body: 'x', taskId: 140 }).value, { body: 'x', taskId: 140 });
+  assert.ok(validateNote({ body: 'x'.repeat(2000) }).value);
+  assert.ok(validateNote({ body: 'x'.repeat(2001) }).error);
+  assert.ok(validateNote({ body: '   ' }).error);
+  assert.ok(validateNote({ body: 5 }).error);
+  assert.ok(validateNote({ body: 'x', taskId: '140' }).error);
+  assert.deepStrictEqual(validateNoteListQuery({}).value, { taskId: null });
+  assert.deepStrictEqual(validateNoteListQuery({ taskId: '7' }).value, { taskId: 7 });
+  assert.ok(validateNoteListQuery({ taskId: 'abc' }).error);
 });

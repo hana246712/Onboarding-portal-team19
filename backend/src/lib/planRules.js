@@ -126,6 +126,92 @@ function escapeLike(text) {
   return text.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+// ---- Week 3 ------------------------------------------------------------------
+
+// Allowed task status changes (proposal, contract T2).
+//   'owner' = the person who does the task (customer task: the plan's
+//             customer; staff task: the assigned Staff user or any Admin)
+//   'admin' = Admin only (reopening a finished task, any actor)
+const TRANSITIONS = {
+  'Not Started': { 'In Progress': 'owner' },
+  'In Progress': { Done: 'owner' },
+  Done: { 'In Progress': 'admin' },
+};
+
+// Returns 'owner', 'admin', or null when the change is not allowed at all.
+function transitionRule(from, to) {
+  return (TRANSITIONS[from] && TRANSITIONS[from][to]) || null;
+}
+
+function isObject(body) {
+  return body && typeof body === 'object' && !Array.isArray(body);
+}
+
+// Body of PATCH /api/tasks/:id -> { value: { status } } or { error }.
+function validateTaskStatus(body) {
+  if (!isObject(body)) return { error: 'Request body must be a JSON object' };
+  if (!TASK_STATUSES.includes(body.status)) {
+    return { error: `status must be one of: ${TASK_STATUSES.join(', ')}` };
+  }
+  return { value: { status: body.status } };
+}
+
+// Body of PATCH /api/plans/:id: either a new title, or cancelling.
+// -> { value: { action: 'rename', title } | { action: 'cancel', cancelReason } } or { error }.
+function validatePlanUpdate(body) {
+  if (!isObject(body)) return { error: 'Request body must be a JSON object' };
+  const hasTitle = body.title !== undefined;
+  const hasStatus = body.status !== undefined;
+  if (hasTitle === hasStatus) {
+    return { error: 'Send either a new title, or status "Cancelled" with a cancelReason' };
+  }
+  if (hasTitle) {
+    if (typeof body.title !== 'string') return { error: 'title must be text' };
+    const title = body.title.trim();
+    if (!title) return { error: 'title cannot be empty' };
+    if (title.length > 150) return { error: 'title must be at most 150 characters' };
+    return { value: { action: 'rename', title } };
+  }
+  if (body.status !== 'Cancelled') {
+    return { error: 'status can only be changed to Cancelled (plans complete automatically)' };
+  }
+  if (typeof body.cancelReason !== 'string' || !body.cancelReason.trim()) {
+    return { error: 'cancelReason is required when cancelling a plan' };
+  }
+  const cancelReason = body.cancelReason.trim();
+  if (cancelReason.length > 500) return { error: 'cancelReason must be at most 500 characters' };
+  return { value: { action: 'cancel', cancelReason } };
+}
+
+// Body of PATCH /api/tasks/:id/assignment -> { value: { assigneeId } } or { error }.
+function validateAssignment(body) {
+  if (!isObject(body)) return { error: 'Request body must be a JSON object' };
+  if (!isPositiveId(body.assigneeId)) return { error: 'assigneeId must be a positive whole number' };
+  return { value: { assigneeId: body.assigneeId } };
+}
+
+// Body of POST /api/plans/:id/notes -> { value: { body, taskId } } or { error }.
+function validateNote(body) {
+  if (!isObject(body)) return { error: 'Request body must be a JSON object' };
+  if (typeof body.body !== 'string') return { error: 'body must be text' };
+  const text = body.body.trim();
+  if (!text) return { error: 'body cannot be empty' };
+  if (text.length > 2000) return { error: 'body must be at most 2000 characters' };
+  const { taskId } = body;
+  if (taskId !== undefined && taskId !== null && !isPositiveId(taskId)) {
+    return { error: 'taskId must be a positive whole number' };
+  }
+  return { value: { body: text, taskId: taskId || null } };
+}
+
+// ?taskId= for GET /api/plans/:id/notes.
+function validateNoteListQuery(query = {}) {
+  if (query.taskId === undefined) return { value: { taskId: null } };
+  const taskId = parseQueryId(query.taskId);
+  if (!taskId) return { error: 'taskId must be a positive whole number' };
+  return { value: { taskId } };
+}
+
 module.exports = {
   PLAN_STATUSES,
   TASK_STATUSES,
@@ -134,4 +220,10 @@ module.exports = {
   validatePlanListQuery,
   validateTaskListQuery,
   escapeLike,
+  transitionRule,
+  validateTaskStatus,
+  validatePlanUpdate,
+  validateAssignment,
+  validateNote,
+  validateNoteListQuery,
 };

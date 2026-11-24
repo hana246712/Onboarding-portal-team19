@@ -27,4 +27,12 @@ async function taskAssigned(client, { planId, taskId = null, assigneeIds }) {
   }
 }
 
-module.exports = { taskAssigned };
+// plan.completed: every task of the plan is Done.
+// Weeks 2-3: nothing to store yet. The notifications table has no
+// "completed" type, and the dashboard reads plan status directly.
+// Weeks 4-5: this sends { planId, customerId } to the "plan-events" SQS queue.
+async function planCompleted(client, { planId, customerId }) { // eslint-disable-line no-unused-vars
+  return { event: 'plan.completed', planId, customerId };
+}
+
+module.exports = { taskAssigned, planCompleted };
