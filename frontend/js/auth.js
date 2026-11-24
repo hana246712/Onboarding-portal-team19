@@ -29,7 +29,7 @@
     { href: 'plans.html', label: 'Onboarding plans', roles: ['Admin', 'Staff', 'Customer'], ready: false }, // Hana Anwar
     { href: 'templates.html', label: 'Templates', roles: ['Admin', 'Staff'], ready: true }, // Hana Fady
     { href: 'users.html', label: 'Users', roles: ['Admin'], ready: true }, // Hana Fady
-    { href: 'dashboard.html', label: 'Dashboard', roles: ['Admin', 'Staff'], ready: false }, // Jana
+    { href: 'dashboard.html', label: 'Dashboard', roles: ['Admin', 'Staff'], ready: true }, // Jana
     { href: 'audit.html', label: 'Audit log', roles: ['Admin'], ready: false }, // Jana
   ];
 
