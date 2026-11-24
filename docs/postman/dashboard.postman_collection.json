@@ -2,9 +2,8 @@
   "info": {
     "_postman_id": "57f0ba38-1176-41e9-a436-2621ef2c478f",
     "name": "Team 19 – Dashboard & Monitoring",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_exporter_id": "54324729",
-    "_collection_link": "https://go.postman.co/collection/54324729-57f0ba38-1176-41e9-a436-2621ef2c478f?source=collection_link"
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    
   },
   "item": [
     {
@@ -372,7 +371,7 @@
       "response": []
     },
     {
-      "name": "Mark read – not mine",
+            "name": "Mark read – unknown id → 404",
       "event": [
         {
           "listen": "test",
