@@ -228,14 +228,16 @@ router.post('/plans', requireAuth, requireRole('Admin'), async (req, res, next) 
         'SELECT DISTINCT assignee_id FROM tasks WHERE plan_id = $1',
         [planId]
       );
-      await planEvents.taskAssigned(client, {
+      const events = planEvents.taskAssigned({
         planId,
         assigneeIds: assignees.rows.map((r) => r.assignee_id),
       });
+      await planEvents.record(client, events);
 
       return {
         status: 201,
         planId,
+        events,
         plan: await loadPlan(client, planId, null),
         tasks: await loadTasks(client, planId, null),
       };
@@ -243,6 +245,7 @@ router.post('/plans', requireAuth, requireRole('Admin'), async (req, res, next) 
 
     if (outcome.error) return res.status(outcome.status).json({ error: outcome.error });
 
+    await planEvents.publish(outcome.events); // after the commit (no-op without a queue)
     await recordAudit({ actorId: req.user.id, action: 'plan_create', entity: 'plan', entityId: outcome.planId, result: 'allowed', ip: req.ip });
     return res.status(201).json({ plan: toPlan(outcome.plan, true), tasks: outcome.tasks });
   } catch (err) {
@@ -414,6 +417,7 @@ router.patch('/tasks/:id', requireAuth, requireRole('Admin', 'Staff', 'Customer'
 
       // Plan status rules: all tasks Done -> Completed; a reopen -> Active again.
       let planStatus = task.plan_status;
+      const events = [];
       if (to === 'Done') {
         const left = await client.query(
           "SELECT COUNT(*)::int AS n FROM tasks WHERE plan_id = $1 AND status <> 'Done'",
@@ -424,7 +428,7 @@ router.patch('/tasks/:id', requireAuth, requireRole('Admin', 'Staff', 'Customer'
             "UPDATE onboarding_plans SET status = 'Completed', updated_at = now() WHERE id = $1",
             [task.plan_id]
           );
-          await planEvents.planCompleted(client, { planId: task.plan_id, customerId: task.customer_id });
+          events.push(...planEvents.planCompleted({ planId: task.plan_id, customerId: task.customer_id }));
           planStatus = 'Completed';
         }
       } else if (task.plan_status === 'Completed') {
@@ -439,6 +443,7 @@ router.patch('/tasks/:id', requireAuth, requireRole('Admin', 'Staff', 'Customer'
         status: 200,
         planId: task.plan_id,
         planChanged: planStatus !== task.plan_status ? planStatus : null,
+        events,
         body: { task: await loadTask(client, id), planStatus },
       };
     });
@@ -450,6 +455,7 @@ router.patch('/tasks/:id', requireAuth, requireRole('Admin', 'Staff', 'Customer'
       return res.status(outcome.status).json({ error: outcome.error });
     }
 
+    await planEvents.publish(outcome.events); // plan.completed, after the commit
     await recordAudit({ actorId: user.id, action: 'task_status', entity: 'task', entityId: id, result: 'allowed', ip: req.ip });
     if (outcome.planChanged) {
       await recordAudit({ actorId: user.id, action: outcome.planChanged === 'Completed' ? 'plan_complete' : 'plan_reopen', entity: 'plan', entityId: outcome.planId, result: 'allowed', ip: req.ip });
@@ -484,11 +490,13 @@ router.patch('/tasks/:id/assignment', requireAuth, requireRole('Admin', 'Staff')
       if (!who.rows[0]) return done(400, 'assigneeId must be an active Admin or Staff user');
 
       await client.query('UPDATE tasks SET assignee_id = $2, updated_at = now() WHERE id = $1', [id, assigneeId]);
-      await planEvents.taskAssigned(client, { planId: task.plan_id, taskId: id, assigneeIds: [assigneeId] });
-      return { status: 200, task: await loadTask(client, id) };
+      const events = planEvents.taskAssigned({ planId: task.plan_id, taskId: id, assigneeIds: [assigneeId] });
+      await planEvents.record(client, events);
+      return { status: 200, task: await loadTask(client, id), events };
     });
     if (outcome.error) return res.status(outcome.status).json({ error: outcome.error });
 
+    await planEvents.publish(outcome.events); // after the commit (no-op without a queue)
     await recordAudit({ actorId: req.user.id, action: 'task_reassign', entity: 'task', entityId: id, result: 'allowed', ip: req.ip });
     return res.json({ task: outcome.task });
   } catch (err) {
