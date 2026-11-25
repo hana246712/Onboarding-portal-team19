@@ -1,6 +1,4 @@
-// User accounts screen (Admin only). Owner: Hana Fady (issue #10).
-// Create accounts, change role, rename, deactivate and reactivate.
-// API: /api/users (see backend/src/routes/users.js). Users are never deleted.
+// User accounts screen (Admin only). Users are deactivated, never deleted.
 
 (() => {
   const user = auth.requireLogin(['Admin']);

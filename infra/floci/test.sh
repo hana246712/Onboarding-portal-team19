@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
 # Team 19 – Floci security tests for RDS PostgreSQL + IAM
-# Owner: Hana Fady
 #
 # Run after setup.sh, against a Floci started with
 #   FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true

@@ -1,17 +1,7 @@
-// Security middleware used by every protected route. Owner: Hana Fady.
-//
-//   requireAuth          -> 401 if the token is missing, invalid or expired,
-//                           or the user no longer exists or is deactivated
-//   requireRole(...)     -> 403 if the user's role is not allowed (audited)
-//
-// Usage in a route file:
-//   const { requireAuth, requireRole } = require('../middleware/auth');
-//   router.post('/templates', requireAuth, requireRole('Admin'), handler);
-//
-// After requireAuth, req.user = { id, name, role } read fresh from the
-// database, so role changes and deactivation apply immediately.
-// Ownership checks ("is this my plan?") stay in each route, because only
-// the route knows which record is being accessed.
+// requireAuth: 401 if the token is missing, invalid or expired, or the user is
+// gone or deactivated. requireRole(...): 403 if the role is not allowed (audited).
+// The user is read from the database on every request, so role changes and
+// deactivation apply at once. Ownership checks stay in each route.
 
 const pool = require('../db/pool');
 const { verifyToken } = require('../lib/tokens');

@@ -1,10 +1,5 @@
-// Signing and checking login tokens (JWT). Owner: Hana Fady.
-//
-// - HS256 only: the algorithm is fixed when verifying, so a token that
-//   claims "alg: none" or another algorithm is rejected.
-// - Short lifetime (1 hour). The token carries only the user id; the
-//   role and active flag are read from the database on every request,
-//   so a role change or deactivation takes effect immediately.
+// Login tokens (JWT): HS256 only, so "alg: none" is rejected; 1-hour lifetime.
+// The token carries only the user id; role and active flag come from the database.
 
 const jwt = require('jsonwebtoken');
 
