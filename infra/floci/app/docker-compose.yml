@@ -10,7 +10,7 @@ services:
     image: floci/floci:2.5.0
     container_name: floci
     user: root
-     network_mode: bridge   # same network as the RDS container Floci starts
+    network_mode: bridge   # same network as the RDS container Floci starts
     ports:
       - "4566:4566"
       - "7001-7020:7001-7020"
