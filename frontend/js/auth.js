@@ -30,7 +30,7 @@
     { href: 'templates.html', label: 'Templates', roles: ['Admin', 'Staff'], ready: true }, // Hana Fady
     { href: 'users.html', label: 'Users', roles: ['Admin'], ready: true }, // Hana Fady
     { href: 'dashboard.html', label: 'Dashboard', roles: ['Admin', 'Staff'], ready: true }, // Jana
-    { href: 'audit.html', label: 'Audit log', roles: ['Admin'], ready: false }, // Jana
+    { href: 'audit.html', label: 'Audit log', roles: ['Admin'], ready: true }, // Jana
   ];
 
   // ---- pure helpers (no browser needed; unit-tested in backend/test) ----------
