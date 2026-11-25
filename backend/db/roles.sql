@@ -49,11 +49,14 @@ GRANT SELECT ON templates, onboarding_plans, tasks, audit_log TO dashboard_ro;
 -- ---------------------------------------------------------------------
 -- notifier: the daily notification job
 -- Reads plans and tasks, reads user name/email to address messages,
--- and can only ADD rows to notifications.
+-- and can only ADD rows to notifications. The one change it may make is
+-- the delivery result of an email record (Brevo email: 'failed' -> 'sent');
+-- read_at and every other column stay read-only for it.
 -- ---------------------------------------------------------------------
 GRANT SELECT (id, name, email, role, active) ON users TO notifier;
 GRANT SELECT ON onboarding_plans, tasks TO notifier;
 GRANT SELECT, INSERT ON notifications TO notifier;
+GRANT UPDATE (delivery_status) ON notifications TO notifier;
 GRANT USAGE, SELECT ON SEQUENCE notifications_id_seq TO notifier;
 
 -- ---------------------------------------------------------------------

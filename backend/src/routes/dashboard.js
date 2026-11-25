@@ -7,7 +7,8 @@
 //   GET /api/dashboard/overdue          Admin, Staff   late tasks in Active plans
 //   GET /api/dashboard/at-risk          Admin, Staff   plans with overdue or due-soon tasks
 //   GET /api/dashboard/inactive-owners  Admin, Staff   open tasks owned by deactivated users
-//   GET   /api/jobs/notifications        Vercel Cron   daily overdue / at-risk notifications (CRON_SECRET)
+//   GET   /api/jobs/notifications        Vercel Cron   daily overdue / at-risk notifications (CRON_SECRET),
+//                                                      plus one Brevo email per overdue task owner (EMAIL_ENABLED)
 
 const express = require('express');
 const pool = require('../db/pool');
@@ -15,6 +16,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const crypto = require('node:crypto');
 const { recordAudit } = require('../lib/audit');
 const { parseId } = require('../lib/templateRules');
+const { sendDueEmails } = require('../lib/email');
 
 const router = express.Router();
 
@@ -400,6 +402,10 @@ router.patch('/notifications/:id/read', requireAuth, async (req, res, next) => {
 // Runs as the notifier role: it can read plans/tasks and only ADD notifications.
 // The notifications_once_per_day index + ON CONFLICT DO NOTHING mean a second
 // run on the same day adds nothing.
+// After the in-app notifications are saved, each overdue task owner also gets
+// one email through Brevo (src/lib/email.js) when EMAIL_ENABLED=true. The email
+// step fails soft: if it goes wrong, the in-app notifications are kept and the
+// job still answers 200. The audit entry holds counts only, never an address.
 
 // Compares the header with the secret in constant time (no timing leaks).
 // Fails closed: no secret configured, or a short one, means nobody gets in.
@@ -446,13 +452,21 @@ router.get('/jobs/notifications', async (req, res, next) => {
       [AT_RISK_DAYS]
     );
 
-    const result = { overdue: overdue.rowCount, atRisk: atRisk.rowCount };
-    await recordAudit({ actorId: null, action: 'job_notifications', entity: 'job', entityId: `overdue=${result.overdue},at_risk=${result.atRisk}`, result: 'allowed', ip: req.ip });
+    // 3. email (Brevo): never lets the job fail
+    let email = { enabled: false, sent: 0, failed: 0, skipped: 0, deferred: 0 };
+    try {
+      email = await sendDueEmails(db);
+    } catch (err) {
+      email = { ...email, enabled: true, error: true };
+      console.warn(JSON.stringify({ level: 'warn', message: 'Email step failed; in-app notifications were saved', code: err.code }));
+    }
+
+    const result = { overdue: overdue.rowCount, atRisk: atRisk.rowCount, email };
+    const counts = `overdue=${result.overdue},at_risk=${result.atRisk},email_sent=${email.sent},email_failed=${email.failed + email.skipped}`;
+    await recordAudit({ actorId: null, action: 'job_notifications', entity: 'job', entityId: counts.slice(0, 60), result: 'allowed', ip: req.ip });
     return res.json(result);
   } catch (err) {
     return next(err);
   }
 });
 module.exports = router;
-
-

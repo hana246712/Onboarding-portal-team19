@@ -25,6 +25,8 @@ INSERT INTO tasks (id, plan_id, title, position, visibility, actor, assignee_id,
   VALUES (9001, 9001, 'Check task', 1, 'customer', 'customer', 9003, CURRENT_DATE);
 INSERT INTO internal_notes (plan_id, author_id, body) VALUES (9001, 9002, 'secret note');
 INSERT INTO audit_log (actor_id, action, result) VALUES (9001, 'check', 'allowed');
+INSERT INTO notifications (user_id, plan_id, task_id, type, channel, delivery_status)
+  VALUES (9003, 9001, 9001, 'overdue', 'email', 'failed');
 
 -- Helper: run a statement as a role and report whether it was allowed.
 CREATE FUNCTION pg_temp.expect(role_name TEXT, stmt TEXT, should_work BOOLEAN, label TEXT)
@@ -60,6 +62,7 @@ SELECT result AS "check" FROM (VALUES
   (pg_temp.expect('notifier', 'SELECT count(*) FROM tasks',                   TRUE,  'notifier can read tasks')),
   (pg_temp.expect('notifier', $q$INSERT INTO notifications (user_id, plan_id, task_id, type, channel) VALUES (9003, 9001, 9001, 'overdue', 'in_app')$q$, TRUE, 'notifier can add a notification')),
   (pg_temp.expect('notifier', 'UPDATE notifications SET read_at = now()',     FALSE, 'notifier cannot change notifications')),
+  (pg_temp.expect('notifier', $q$UPDATE notifications SET delivery_status = 'sent' WHERE channel = 'email'$q$, TRUE, 'notifier can record an email result (delivery_status only)')),
   (pg_temp.expect('notifier', $q$UPDATE tasks SET title = 'x'$q$,             FALSE, 'notifier cannot change tasks')),
   (pg_temp.expect('notifier', 'SELECT * FROM internal_notes',                 FALSE, 'notifier cannot read internal notes')),
   (pg_temp.expect('notifier', 'SELECT password_hash FROM users',              FALSE, 'notifier cannot read password hashes')),

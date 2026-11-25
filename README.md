@@ -4,7 +4,7 @@ Cloud Computing and Cloud Security (26CSCN29H), group project.
 
 Reusable onboarding templates with task rules, customer plans with owners and due dates, role-based access that hides internal tasks and notes, and a dashboard that flags overdue tasks and at-risk plans.
 
-**Stack:** HTML/CSS/JS frontend · Node.js + Express REST API · Neon PostgreSQL · Vercel (two projects) · Brevo email (optional channel)
+**Stack:** HTML/CSS/JS frontend · Node.js + Express REST API · Neon PostgreSQL · Vercel (two projects) · Brevo transactional email (daily overdue reminders)
 
 ## Team and ownership
 
@@ -12,7 +12,7 @@ Reusable onboarding templates with task rules, customer plans with owners and du
 |---|---|---|
 | Hana Fady | Template & Workflow Rules; leads Auth & identity (login, users) and database setup | `backend/src/routes/templates.js`, `auth.js`, `users.js`, `backend/src/middleware/`, `backend/db/` |
 | Hana Anwar | Plan & Task Management | `backend/src/routes/plans.js`, `frontend/plans/` |
-| Jana Hossam | Dashboard & Monitoring; leads deployment and logging | `backend/src/routes/dashboard.js`, `frontend/dashboard/`, `backend/vercel.json` |
+| Jana Hossam | Dashboard & Monitoring; leads deployment and logging | `backend/src/routes/dashboard.js`, `backend/src/lib/email.js`, `frontend/dashboard/`, `backend/vercel.json` |
 
 Each member works only in their own files and branch, so each person's commits show their own work.
 
@@ -23,6 +23,7 @@ backend/
   src/app.js            Express app (Vercel runs this as one function)
   src/routes/           one file per service
   src/middleware/       token, role and ownership checks (shared)
+  src/lib/email.js      Brevo email for the daily job
   src/db/pool.js        Neon connections (one per database role)
   db/schema.sql         all tables
   db/roles.sql          the three least-privilege database roles
@@ -55,7 +56,7 @@ Workflow: create your branch from the latest `main`, commit your work, push the 
 |---|---|---|
 | `app_rw` | `DATABASE_URL` | read/write application tables; audit log is insert-only |
 | `dashboard_ro` | `DASHBOARD_DATABASE_URL` | read only; no password hashes, emails or internal notes |
-| `notifier` | `NOTIFIER_DATABASE_URL` | read plans and tasks; add notifications only |
+| `notifier` | `NOTIFIER_DATABASE_URL` | read plans and tasks; add notifications; set the delivery result of an email record (`delivery_status` only) |
 
 To prove the roles and data rules work, run `backend/db/check.sql` as the owner. Every line should say `PASS`, and nothing is saved.
 
@@ -78,6 +79,16 @@ Open `frontend/index.html` with a local static server (for example the VS Code L
 
 - **API project:** root directory `backend`. Vercel detects Express automatically. Set every variable from `.env.example` in the project's Environment Variables.
 - **Frontend project:** root directory `frontend`, no build step. Put the API project's URL in `frontend/js/config.js`, and add the frontend URL to `CORS_ORIGINS` in the API project.
+
+## Email reminders (Brevo)
+
+The daily job (`GET /api/jobs/notifications`, run by Vercel Cron) saves in-app notifications first. Then, when `EMAIL_ENABLED=true`, it sends each owner of an overdue task one email through Brevo's transactional email API (`POST https://api.brevo.com/v3/smtp/email`).
+
+- **Content:** plain text with the task title, plan title, due date and a link to the plan. No internal notes, no tokens or passwords; a Customer only ever gets tasks they are allowed to see.
+- **Limits:** at most one email per person, task and day (the same once-per-day rule as the notifications), and at most 250 a day, below Brevo's free limit of 300.
+- **Fails soft:** if the key is missing, Brevo answers with an error or takes longer than 5 seconds, the in-app notifications are kept and the job still answers `200`. Each email is recorded in `notifications` (`channel = 'email'`, `delivery_status` = `sent`, `failed` or `skipped`), and the job's audit entry holds the counts only (`email_sent`, `email_failed`), never an address.
+- **Settings (Vercel `team19-api`, Production):** `BREVO_API_KEY` (Brevo: SMTP & API → API keys), `EMAIL_FROM` (the verified sender) and `EMAIL_ENABLED=true`. The key is never in code, tests, docs or logs; tests replace Brevo with a fake.
+- **Database:** the `notifier` role needs `GRANT UPDATE (delivery_status) ON notifications TO notifier;` (in `db/roles.sql`) on each Neon branch.
 
 ## Security rules for everyone
 

@@ -20,6 +20,11 @@ if (!process.env.CRON_SECRET || process.env.CRON_SECRET.length < 32) {
   process.env.CRON_SECRET = 'test-cron-secret-that-is-long-enough-1234567890';
 }
 const CRON = process.env.CRON_SECRET;
+// Email is off unless a test turns it on, and a real Brevo key is never used:
+// the email tests below replace fetch with a fake Brevo.
+process.env.EMAIL_ENABLED = 'false';
+delete process.env.BREVO_API_KEY;
+delete process.env.EMAIL_FROM;
 
 const SKIP = process.env.DATABASE_URL && process.env.DASHBOARD_DATABASE_URL
   ? false
@@ -455,8 +460,134 @@ test('job: a second run on the same day adds nothing new', { skip: SKIP }, async
 test('job: every run is written to the audit log', { skip: SKIP }, async () => {
   const { rows } = await pool.db().query(
     `SELECT entity_id FROM audit_log
-      WHERE action = 'job_notifications' AND result = 'allowed' AND created_at > now() - interval '5 minutes'`
+      WHERE action = 'job_notifications' AND result = 'allowed' AND created_at > now() - interval '5 minutes'
+      ORDER BY id DESC`
   );
   assert.ok(rows.length >= 1);
-  assert.match(rows[0].entity_id, /^overdue=\d+,at_risk=\d+$/);
+  assert.match(rows[0].entity_id, /^overdue=\d+,at_risk=\d+,email_sent=\d+,email_failed=\d+$/);
+});
+
+// ---- Brevo email in the daily job -------------------------------------------------
+// fetch is replaced by a fake Brevo, so no real email is ever sent and no key is
+// needed. These tests need the grant from db/roles.sql on the notifier role:
+//   GRANT UPDATE (delivery_status) ON notifications TO notifier;
+
+const realFetch = globalThis.fetch;
+
+function fakeBrevo(status) {
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, headers: options.headers, body: JSON.parse(options.body) });
+    return { ok: status >= 200 && status < 300, status };
+  };
+  return calls;
+}
+
+function emailOn() {
+  process.env.EMAIL_ENABLED = 'true';
+  process.env.BREVO_API_KEY = 'test-key-not-real';
+  process.env.EMAIL_FROM = 'sender@example.test';
+}
+
+function emailOff() {
+  process.env.EMAIL_ENABLED = 'false';
+  delete process.env.BREVO_API_KEY;
+  delete process.env.EMAIL_FROM;
+  globalThis.fetch = realFetch;
+}
+
+async function emailRecords(taskId) {
+  const { rows } = await pool.db().query(
+    `SELECT user_id, delivery_status FROM notifications WHERE task_id = $1 AND channel = 'email'`,
+    [taskId]
+  );
+  return rows;
+}
+
+const staffEmail = () => `test-dash-staff-${run}@example.test`;
+const customerEmail = () => `test-dash-customer-${run}@example.test`;
+
+test('email: disabled -> the job sends and records nothing', { skip: SKIP }, async () => {
+  await makeJobData();
+  const calls = fakeBrevo(201);
+  try {
+    const res = await runJob(`Bearer ${CRON}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.email.enabled, false);
+    assert.strictEqual(calls.length, 0, 'no request to Brevo');
+    assert.deepStrictEqual(await emailRecords(job.staffLate), []);
+  } finally {
+    emailOff();
+  }
+});
+
+test('email: each overdue owner gets one email through Brevo, recorded as sent, only once a day', { skip: SKIP }, async () => {
+  await makeJobData();
+  emailOn();
+  const calls = fakeBrevo(201);
+  try {
+    const res = await runJob(`Bearer ${CRON}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.email.enabled, true);
+    assert.ok(res.body.email.sent >= 2);
+    assert.ok(!JSON.stringify(res.body).includes('@'), 'the job response holds counts only');
+
+    const toStaff = calls.filter((c) => c.body.to[0].email === staffEmail());
+    assert.strictEqual(toStaff.length, 1, 'one email for the Staff owner');
+    const [mail] = toStaff;
+    assert.strictEqual(mail.url, 'https://api.brevo.com/v3/smtp/email');
+    assert.strictEqual(mail.headers['api-key'], 'test-key-not-real');
+    assert.strictEqual(mail.body.sender.email, 'sender@example.test');
+    assert.match(mail.body.textContent, /Task: Staff late task/);
+    assert.match(mail.body.textContent, new RegExp(`Plan: Alert plan ${run}`));
+    assert.match(mail.body.textContent, /Due date: \d{4}-\d{2}-\d{2}/);
+    assert.ok(mail.body.textContent.includes(`https://team19-web.vercel.app/plans.html?id=${alert.planId}`));
+    assert.ok(!mail.body.textContent.includes('@'), 'no address in the text');
+    assert.strictEqual(mail.body.htmlContent, undefined, 'plain text only');
+
+    assert.strictEqual(calls.filter((c) => c.body.to[0].email === customerEmail()).length, 1, 'one email for the Customer task');
+    assert.ok(!calls.some((c) => c.body.to[0].email === `test-dash-inactive-${run}@example.test`), 'a deactivated owner gets nothing');
+    assert.ok(!calls.some((c) => JSON.stringify(c.body).includes('Secret internal task')), 'no internal task in any email');
+
+    assert.deepStrictEqual(
+      await emailRecords(job.staffLate),
+      [{ user_id: userIds.Staff, delivery_status: 'sent' }],
+      "recorded as 'sent' (needs: GRANT UPDATE (delivery_status) ON notifications TO notifier)"
+    );
+
+    // the same day again: nothing new for these tasks
+    const before = calls.length;
+    const again = await runJob(`Bearer ${CRON}`);
+    assert.strictEqual(again.status, 200);
+    assert.strictEqual(calls.filter((c, i) => i >= before && [staffEmail(), customerEmail()].includes(c.body.to[0].email)).length, 0);
+  } finally {
+    emailOff();
+  }
+});
+
+test('email: Brevo error -> job still 200, in-app notice kept, email recorded as failed', { skip: SKIP }, async () => {
+  await makeJobData();
+  // a new late task (Admin owns it), so it has no email record yet today
+  const { rows: [task] } = await pool.db().query(
+    `INSERT INTO tasks (plan_id, title, position, visibility, actor, assignee_id, due_date)
+     VALUES ($1, 'Admin late task', 7, 'customer', 'staff', $2, CURRENT_DATE - 1) RETURNING id`,
+    [alert.planId, userIds.Admin]
+  );
+  emailOn();
+  fakeBrevo(500);
+  try {
+    const res = await runJob(`Bearer ${CRON}`);
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.email.failed >= 1);
+    assert.ok((await jobNotes(userIds.Admin, 'overdue')).includes(task.id), 'in-app notice saved');
+    assert.deepStrictEqual(await emailRecords(task.id), [{ user_id: userIds.Admin, delivery_status: 'failed' }]);
+
+    const { rows: [entry] } = await pool.db().query(
+      `SELECT entity_id FROM audit_log WHERE action = 'job_notifications' ORDER BY id DESC LIMIT 1`
+    );
+    assert.match(entry.entity_id, /email_failed=[1-9]\d*$/);
+    assert.ok(!entry.entity_id.includes('@'), 'counts only, never an address');
+  } finally {
+    emailOff();
+  }
 });
