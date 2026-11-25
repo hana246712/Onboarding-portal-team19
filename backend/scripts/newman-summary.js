@@ -1,7 +1,5 @@
-// Turns a Newman JSON report into a Markdown table (used by the
-// "Deployed security regression" GitHub Actions workflow, issue #12).
+// Turns a Newman JSON report into a Markdown table; exits 1 if any assertion failed.
 // Usage: node scripts/newman-summary.js <report.json> "<title>"
-// Prints the table; exits 1 if any assertion failed.
 
 const fs = require('fs');
 

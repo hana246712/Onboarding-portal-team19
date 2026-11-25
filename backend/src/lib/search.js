@@ -1,8 +1,4 @@
-// Search helper shared by the user and template lists. Owner: Hana Fady.
-//
-// Turns what the user typed into a safe ILIKE pattern. The value is always
-// sent as a query parameter (never pasted into SQL), and % and _ are
-// escaped so they are matched literally instead of acting as wildcards.
+// Turns search text into an ILIKE pattern with % and _ escaped, so they match literally.
 
 const MAX_SEARCH = 100;
 

@@ -1,14 +1,5 @@
-// Small helper every page uses to call the API.
-// It adds the login token and turns errors into readable messages.
-// Pages must display data with textContent, never innerHTML, so text from
-// the database can't run as script (XSS).
-//
-// Load order on every page: config.js, auth.js, api.js, then the page script.
-//
-// On 401 (token missing, expired or the account was deactivated) the user is
-// sent back to the login page. Pages only need to handle the other errors:
-//   try { const plans = await api.get('/api/plans'); }
-//   catch (err) { showError(err.message); }   // err.status = 400 / 403 / 404 / 409 / 429 ...
+// Calls the API with the login token and turns errors into readable messages.
+// A 401 sends the user back to the login page.
 
 async function apiRequest(method, path, body) {
   const headers = { Accept: 'application/json' };
@@ -33,7 +24,7 @@ async function apiRequest(method, path, body) {
   try {
     data = await res.json();
   } catch {
-    // Empty or non-JSON response
+    // empty or non-JSON response
   }
 
   if (!res.ok) {

@@ -1,6 +1,4 @@
-// Template & Workflow Rules - input validation. Owner: Hana Fady.
-//
-// Pure functions (no database), so the rules can be unit-tested anywhere.
+// Validation for templates (no database, so it is unit-tested directly).
 // Each template task carries its workflow rules:
 //   visibility: 'internal' (staff only) or 'customer' (customer can see it)
 //   actor:      'staff' or 'customer' (who completes it)

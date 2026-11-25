@@ -1,20 +1,7 @@
-// Login session helpers shared by every page. Owner: Hana Fady (issue #10).
-//
-// How a page uses this (see docs/frontend-guide.md):
-//   <script src="js/config.js"></script>
-//   <script src="js/auth.js"></script>
-//   <script src="js/api.js"></script>
-//   <script src="js/my-page.js"></script>
-// and at the top of my-page.js:
-//   const user = auth.requireLogin(['Admin', 'Staff']);   // redirects if not allowed
-//   if (!user) return;  (inside a function) - the browser is already leaving the page
-//
-// Security notes:
-// - The token is kept in sessionStorage: it is gone when the tab closes and
-//   is never put in a URL or cookie.
-// - The role saved here only decides which links and pages the browser shows.
-//   The API checks the role from the database on every request, so editing
-//   sessionStorage cannot give anyone more access.
+// Login session helpers shared by every page (usage: docs/frontend-guide.md).
+// The token is kept in sessionStorage only (gone when the tab closes, never in a URL).
+// The saved role only decides what the browser shows; the API checks the real
+// role from the database on every request.
 
 (function (root) {
   const TOKEN_KEY = 'onboarding_token';

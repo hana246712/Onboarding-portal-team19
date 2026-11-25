@@ -1,7 +1,4 @@
-// Templates screen. Owner: Hana Fady (issue #10).
-// Admin: list, search, create, edit, reorder, duplicate, archive.
-// Staff: list, search and read only (the API enforces this too).
-// API: /api/templates (see backend/src/routes/templates.js).
+// Templates screen. Admin: full management; Staff: read only (the API enforces this too).
 
 (() => {
   const user = auth.requireLogin(['Admin', 'Staff']);

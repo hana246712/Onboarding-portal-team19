@@ -1,24 +1,6 @@
-// Runs a Postman collection with Newman: login, users and templates (default),
-// or plans, tasks and notes (npm run postman -- plans).
-// Owner: Hana Fady (issue #11); collection choice added by Hana Anwar (issue #24).
-//
-//   cd backend
-//   npm run dev        (first terminal: the local API on the DEV database)
-//   npm run postman    (second terminal)
-//
-// What it does:
-// 1. Creates a temporary Admin on the DEV database with a random password
-//    (email test-pm-admin-<random>@example.test). Nobody has to know or type
-//    a password, and none is stored anywhere.
-// 2. Runs the collection with Newman against the local API as that Admin.
-// 3. Deactivates the temporary Admin again (accounts are never deleted,
-//    because the audit log points to them).
-//
-// Newman is fetched with npx when needed instead of being a project
-// dependency: its own old dependencies would otherwise add npm audit
-// warnings to the API project, and it is never needed on the live site.
-// The login goes to Newman through a temporary environment file that only
-// this user can read and that is deleted right after the run.
+// Runs a Postman collection with Newman against the local API (dev database only):
+// creates a temporary Admin with a random password, runs the collection as that
+// Admin, then deactivates it. The password is never shown or stored.
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -54,8 +36,7 @@ if (!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(baseUrl)) {
   console.error('This collection changes data, so it only runs against the local API (http://localhost:...).');
   process.exit(1);
 }
-// Which collection to run: npm run postman            -> auth-users-templates (Hana Fady, #11)
-//                         npm run postman -- plans   -> plans-tasks-notes (Hana Anwar, #24)
+// npm run postman -> auth-users-templates; npm run postman -- plans -> plans-tasks-notes
 const COLLECTIONS = {
   'auth-users-templates': 'auth-users-templates.postman_collection.json',
   plans: 'plans-tasks-notes.postman_collection.json',

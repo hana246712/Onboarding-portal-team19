@@ -1,17 +1,6 @@
-// Template & Workflow Rules - Owner: Hana Fady (issue #5)
-//
-//   POST  /api/templates              Admin         create template with its tasks and rules   201
-//   GET   /api/templates              Admin, Staff  list or search (?search=&status=active|archived|all) 200
-//   GET   /api/templates/:id          Admin, Staff  one template with its ordered tasks         200
-//   PUT   /api/templates/:id          Admin         edit template and task rules (version + 1)  200
-//   PATCH /api/templates/:id/archive  Admin         archive (blocks new plans only)             200
-//   PATCH /api/templates/:id/order    Admin         reorder tasks (version + 1)                 200   (issue #7)
-//   POST  /api/templates/:id/duplicate Admin        copy a template and its tasks               201   (issue #7)
-//
-// Errors: 400 bad input, 401 not logged in, 403 wrong role,
-//         404 unknown template, 409 editing or reordering an archived template.
-// Running plans never change: they keep their own copy of the tasks
-// (made by Plan & Task Management when a plan starts).
+// Template routes: Admin creates, edits, reorders, duplicates and archives;
+// Staff can only list and read. Running plans keep their own copy of the tasks,
+// so editing a template never changes them.
 
 const express = require('express');
 const pool = require('../db/pool');
@@ -98,7 +87,6 @@ router.get('/templates', requireAuth, requireRole('Admin', 'Staff'), async (req,
     if (!['active', 'archived', 'all'].includes(status)) {
       return res.status(400).json({ error: "status must be 'active', 'archived' or 'all'" });
     }
-    // Search matches the title or description, ignoring letter case.
     const search = searchPattern(req.query.search);
     if (search.error) return res.status(400).json({ error: search.error });
     const { rows } = await pool.db().query(
@@ -192,7 +180,7 @@ router.patch('/templates/:id/archive', requireAuth, requireRole('Admin'), async 
   }
 });
 
-// ---- reorder tasks (issue #7) --------------------------------------------------
+// ---- reorder tasks --------------------------------------------------
 // Body: { "taskIds": [12, 10, 11] } - every task of the template, in the new order.
 router.patch('/templates/:id/order', requireAuth, requireRole('Admin'), async (req, res, next) => {
   try {
@@ -242,7 +230,7 @@ router.patch('/templates/:id/order', requireAuth, requireRole('Admin'), async (r
   }
 });
 
-// ---- duplicate (issue #7) ------------------------------------------------------
+// ---- duplicate ------------------------------------------------------
 // Body (optional): { "title": "New name" }. Default title: "Copy of <title>".
 // Works on archived templates too, so an old template can be brought back as a
 // new active one. The copy starts at version 1.

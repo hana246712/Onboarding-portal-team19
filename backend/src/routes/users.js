@@ -1,22 +1,6 @@
-// Auth & identity (shared task): Admin user accounts. Owner: Hana Fady (issue #6)
-//
-//   POST  /api/users      Admin  create an account and give it a role        201
-//   GET   /api/users      Admin  list users (?role=&active=&search=)          200
-//   GET   /api/users/:id  Admin  one user                                     200
-//   PATCH /api/users/:id  Admin  change name or role, deactivate/reactivate   200
-//
-// Errors: 400 bad input, 401 not logged in, 403 not Admin, 404 unknown user,
-//         409 email already used, or a change that would lock everyone out
-//         (changing your own role, deactivating yourself, removing the last
-//         active Admin), or a role change while the user still owns work
-//         (open staff tasks -> can't become Customer; customer of an Active
-//         plan -> can't become Staff/Admin).
-//
-// Rules from the proposal: accounts are created only by an Admin (no
-// self-registration), users are never deleted (audit entries point to
-// them), and password_hash is never returned. Deactivation takes effect
-// at once: requireAuth reads the active flag on every request, so the
-// user's existing token stops working immediately.
+// Admin user accounts. Only an Admin creates accounts (no sign-up), users are
+// never deleted (the audit log points to them) and password_hash is never returned.
+// Deactivation works at once because requireAuth checks the active flag on every request.
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
@@ -161,8 +145,8 @@ router.patch('/users/:id', requireAuth, requireRole('Admin'), async (req, res, n
       }
 
       // A role change must not leave work with someone who can no longer do
-      // it, or let a customer read the staff side of their own plan
-      // (review of PR #32). Deactivation is still allowed: the dashboard's
+      // it, or let a customer read the staff side of their own plan.
+      // Deactivation is still allowed: the dashboard's
       // "inactive owners" list shows that work for reassignment.
       if (roleChanges) {
         const wasStaffSide = current.role !== 'Customer';
@@ -217,8 +201,7 @@ router.patch('/users/:id', requireAuth, requireRole('Admin'), async (req, res, n
       return res.status(409).json({ error: outcome.error });
     }
 
-    // One audit entry per kind of change, so role changes and deactivations
-    // are easy to find (proposal 6.2 "Logging").
+    // One audit entry per kind of change, so role changes and deactivations are easy to find.
     if (outcome.roleChanges) await audit(req, 'user_role_change', id);
     if (outcome.activeChanges) await audit(req, outcome.user.active ? 'user_reactivate' : 'user_deactivate', id);
     if (changes.name !== undefined) await audit(req, 'user_update', id);

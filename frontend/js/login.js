@@ -1,6 +1,4 @@
-// Login page. Owner: Hana Fady (issue #10).
-// Sends email + password to POST /api/auth/login, saves the token for this
-// tab only, then opens the page the user asked for (or home).
+// Login page: saves the token for this tab only, then opens the requested page (or home).
 
 (() => {
   const form = document.getElementById('login-form');

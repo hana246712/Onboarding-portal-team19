@@ -1,9 +1,4 @@
-// Shared audit helper: writes one security event to the insert-only
-// audit_log table (proposal 6.2 "Logging").
-//
-// Created by Hana Fady for the login events (Week 2). Every service uses
-// the same helper; Jana's Admin audit-log API reads what it writes.
-//
+// Writes one security event to the insert-only audit_log table.
 // Never pass passwords, tokens or note text in here.
 
 const pool = require('../db/pool');
