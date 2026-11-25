@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Onboarding plans · Onboarding Portal</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/plans.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">Onboarding Portal</span>
+  </header>
+
+  <main class="container wide">
+    <p id="page-message" class="message" hidden></p>
+
+    <!-- ===== List of plans (plans.html) ===== -->
+    <section id="list-view" hidden>
+      <div class="page-head">
+        <h1>Onboarding plans</h1>
+        <button id="new-plan-button" type="button" hidden>New plan</button>
+      </div>
+
+      <!-- New plan (Admin) -->
+      <form id="new-plan-form" class="card form" hidden>
+        <h2>New onboarding plan</h2>
+        <label for="np-template">Template</label>
+        <select id="np-template" required></select>
+        <label for="np-customer">Customer</label>
+        <select id="np-customer" required></select>
+        <label for="np-owner">Owner of the staff tasks</label>
+        <select id="np-owner"></select>
+        <label for="np-start">Start date</label>
+        <input id="np-start" type="date" required>
+        <label for="np-title">Title <span class="muted small">(optional; default: template – customer)</span></label>
+        <input id="np-title" type="text" maxlength="150">
+        <div class="actions">
+          <button id="np-submit" type="submit">Create plan</button>
+          <button id="np-cancel" type="button" class="secondary">Close</button>
+        </div>
+      </form>
+
+      <form id="filters" class="toolbar" role="search">
+        <label>Search
+          <input id="search" type="search" maxlength="100" placeholder="Plan title">
+        </label>
+        <label>Status
+          <select id="status-filter">
+            <option value="">All</option>
+            <option value="Active">Active</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </label>
+      </form>
+
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th scope="col">Plan</th>
+              <th scope="col">Customer</th>
+              <th scope="col">Status</th>
+              <th scope="col">Progress</th>
+              <th scope="col">Start date</th>
+            </tr>
+          </thead>
+          <tbody id="plan-rows"></tbody>
+        </table>
+      </div>
+      <p id="list-empty" class="muted" hidden>No plans found.</p>
+      <div class="pager">
+        <button id="prev-page" type="button" class="secondary small">Previous</button>
+        <span id="page-info" class="muted small"></span>
+        <button id="next-page" type="button" class="secondary small">Next</button>
+      </div>
+    </section>
+
+    <!-- ===== One plan (plans.html?id=12) ===== -->
+    <section id="detail-view" hidden>
+      <p><a href="plans.html">&larr; All plans</a></p>
+      <div class="page-head">
+        <h1 id="plan-title"></h1>
+        <span id="plan-status" class="badge"></span>
+      </div>
+      <p id="plan-meta" class="muted"></p>
+      <p id="plan-cancel-reason" class="notice" hidden></p>
+      <div class="progress" aria-hidden="true"><div id="progress-bar" class="progress-bar"></div></div>
+      <p id="progress-text" class="small"></p>
+
+      <!-- Rename / cancel (Admin, Staff; active plans) -->
+      <div id="plan-actions" class="actions" hidden>
+        <button id="rename-button" type="button" class="secondary small">Rename</button>
+        <button id="cancel-button" type="button" class="secondary small">Cancel plan</button>
+      </div>
+      <form id="rename-form" class="card form" hidden>
+        <label for="rename-input">New title</label>
+        <input id="rename-input" type="text" maxlength="150" required>
+        <div class="actions">
+          <button type="submit">Save title</button>
+          <button id="rename-close" type="button" class="secondary">Close</button>
+        </div>
+      </form>
+      <form id="cancel-form" class="card form" hidden>
+        <label for="cancel-reason">Why is this plan being cancelled?</label>
+        <textarea id="cancel-reason" rows="3" maxlength="500" required></textarea>
+        <p class="small muted">A cancelled plan can't be changed or reopened. The customer sees that it was cancelled, but not the reason.</p>
+        <div class="actions">
+          <button type="submit" class="danger">Cancel this plan</button>
+          <button id="cancel-close" type="button" class="secondary">Keep the plan</button>
+        </div>
+      </form>
+
+      <h2>Tasks</h2>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Task</th>
+              <th scope="col">Owner</th>
+              <th scope="col">Due</th>
+              <th scope="col">Status</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="task-rows"></tbody>
+        </table>
+      </div>
+
+      <!-- Internal notes (Admin, Staff) -->
+      <section id="notes-section" hidden>
+        <h2>Internal notes <span class="badge internal">staff only</span></h2>
+        <form id="note-form" class="card form">
+          <label for="note-body">Add a note</label>
+          <textarea id="note-body" rows="3" maxlength="2000" required></textarea>
+          <label for="note-task">About task <span class="muted small">(optional)</span></label>
+          <select id="note-task"></select>
+          <div class="actions"><button type="submit">Add note</button></div>
+        </form>
+        <ul id="note-list" class="notes"></ul>
+        <p id="notes-empty" class="muted" hidden>No notes yet.</p>
+      </section>
+    </section>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/planView.js"></script>
+  <script src="js/plans.js"></script>
+</body>
+</html>

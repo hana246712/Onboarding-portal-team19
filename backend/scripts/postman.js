@@ -1,5 +1,6 @@
-// Runs the Postman collection for login, users and templates with Newman.
-// Owner: Hana Fady (issue #11).
+// Runs a Postman collection with Newman: login, users and templates (default),
+// or plans, tasks and notes (npm run postman -- plans).
+// Owner: Hana Fady (issue #11); collection choice added by Hana Anwar (issue #24).
 //
 //   cd backend
 //   npm run dev        (first terminal: the local API on the DEV database)
@@ -53,7 +54,18 @@ if (!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(baseUrl)) {
   console.error('This collection changes data, so it only runs against the local API (http://localhost:...).');
   process.exit(1);
 }
-const collection = path.join(__dirname, '..', '..', 'docs', 'postman', 'auth-users-templates.postman_collection.json');
+// Which collection to run: npm run postman            -> auth-users-templates (Hana Fady, #11)
+//                         npm run postman -- plans   -> plans-tasks-notes (Hana Anwar, #24)
+const COLLECTIONS = {
+  'auth-users-templates': 'auth-users-templates.postman_collection.json',
+  plans: 'plans-tasks-notes.postman_collection.json',
+};
+const which = process.argv[2] || 'auth-users-templates';
+if (!COLLECTIONS[which]) {
+  console.error(`Unknown collection "${which}". Use one of: ${Object.keys(COLLECTIONS).join(', ')}`);
+  process.exit(1);
+}
+const collection = path.join(__dirname, '..', '..', 'docs', 'postman', COLLECTIONS[which]);
 
 async function main() {
   const email = `test-pm-admin-${crypto.randomBytes(4).toString('hex')}@example.test`;

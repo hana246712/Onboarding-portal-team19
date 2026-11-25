@@ -1,0 +1,29 @@
+/* Plan and task screens. Owner: Hana Anwar (issue #23).
+   Kept in its own file so it never conflicts with the shared styles.css. */
+
+/* The hidden attribute must win over classes that set display (.actions,
+   .form use flex), or hidden buttons and forms would still show. */
+[hidden] { display: none !important; }
+
+.badge.status-active, .badge.status-in-progress { background: #e3eefa; color: #1f4f86; }
+.badge.status-completed, .badge.status-done { background: #dcf3e3; color: #135c2a; }
+.badge.status-cancelled { background: #ececec; color: #555; }
+.badge.status-not-started { background: #f3f3f3; color: #444; }
+.badge.overdue { background: #fdeeed; color: #a1271b; }
+
+.progress { height: 10px; background: #e7ebf1; border-radius: 999px; overflow: hidden; max-width: 420px; }
+.progress-bar { height: 100%; width: 0; background: var(--ok); transition: width 0.3s; }
+.progress.mini { height: 6px; width: 120px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+.progress.mini .progress-bar { display: block; }
+
+.pager { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+
+table.data td.task-title { min-width: 220px; }
+table.data tr.done td { color: var(--muted); }
+table.data td .actions { gap: 6px; }
+
+.notes { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.notes li { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.notes .note-body { white-space: pre-wrap; margin: 4px 0 0; }
+
+#plan-actions { margin: 8px 0 16px; }
