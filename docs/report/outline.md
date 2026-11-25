@@ -30,7 +30,7 @@ Each section lists its owner and the evidence to collect while working, so nothi
 - 3.4 Request flow example: a customer completes a task (sequence diagram).
 
 ## 4. Data design (HF)
-- 4.1 ER diagram from `schema.sql`: `docs/report/er-diagram.png` (source `er-diagram.dot`, also `.svg`; rebuild with `dot -Tpng -Gdpi=170 er-diagram.dot -o er-diagram.png`).
+- 4.1 ER diagram from `schema.sql`.
 - 4.2 Snapshot design: tasks are copied from templates so template edits don't change running plans.
 - 4.3 Database constraints that enforce business rules (e.g. customer tasks can't be internal).
 - 4.4 Least-privilege database roles: `app_rw`, `dashboard_ro`, `notifier`; `check.sql` results.
