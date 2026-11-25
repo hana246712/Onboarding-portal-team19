@@ -47,11 +47,14 @@ expect_status() {  # label wanted METHOD PATH [extra curl args...]
   if [ "$got" = "$want" ]; then record ok "$label" "HTTP $got"; else record fail "$label" "expected $want, got $got"; fi
 }
 
-# The CRON_SECRET, read with the bootstrap (admin) credential only for this
+# Both secrets, read with the bootstrap (admin) credential only for this
 # test. Masked in the GitHub log and never printed.
-CRON="$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" \
-          --query SecretString --output text | jq -r .CRON_SECRET)"
-[ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$CRON"
+SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" \
+                --query SecretString --output text)"
+CRON="$(jq -r .CRON_SECRET <<<"$SECRET_JSON")"
+JWT="$(jq -r .JWT_SECRET <<<"$SECRET_JSON")"
+unset SECRET_JSON
+if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CRON"; echo "::add-mask::$JWT"; fi
 
 # ---------------------------------------------------------------------
 echo "## 1. The API runs and uses the database with IAM tokens"
@@ -89,10 +92,16 @@ if can_read team19-notifier "$SECRET_NAME"; then record fail "team19-notifier ca
 
 echo "## 4. The container"
 LOGS="$(docker logs team19-api 2>&1)"
-if grep -qF "$CRON" <<<"$LOGS"; then record fail "Secrets never appear in the API log"; else record ok "Secrets never appear in the API log"; fi
+if grep -qF -e "$CRON" -e "$JWT" <<<"$LOGS"; then record fail "Secrets never appear in the API log"; else record ok "Secrets never appear in the API log" "JWT_SECRET and CRON_SECRET"; fi
 UID_IN="$(docker exec team19-api id -u 2>&1)"
 if [ "$UID_IN" != "0" ] && [ -n "$UID_IN" ]; then record ok "API runs as a normal user, not root" "uid $UID_IN"; else record fail "API runs as a normal user, not root" "uid $UID_IN"; fi
-if docker exec team19-api sh -c 'echo x > /app/hacked' >/dev/null 2>&1; then record fail "API files are read-only"; else record ok "API files are read-only"; fi
+# /home/node belongs to the node user, so only read_only: true can stop this write.
+RO="$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' team19-api 2>&1)"
+if [ "$RO" = "true" ] && ! docker exec team19-api sh -c 'echo x > /home/node/test' >/dev/null 2>&1; then
+  record ok "Container files are read-only" "even the node user's own folder"
+else
+  record fail "Container files are read-only" "ReadonlyRootfs=$RO"
+fi
 ENV_DUMP="$(docker exec team19-api env 2>&1)"
 if grep -qE '^(JWT_SECRET|CRON_SECRET)=' <<<"$ENV_DUMP"; then record fail "Secrets are not in the container settings"; else record ok "Secrets are not in the container settings" "only loaded in memory"; fi
 if grep -qE '^(DATABASE_URL|DASHBOARD_DATABASE_URL|NOTIFIER_DATABASE_URL)=postgresql://[^@/]*:[^@]*@' <<<"$ENV_DUMP"; then
@@ -100,7 +109,7 @@ if grep -qE '^(DATABASE_URL|DASHBOARD_DATABASE_URL|NOTIFIER_DATABASE_URL)=postgr
 else
   record ok "Database URLs have no password" "IAM tokens only"
 fi
-unset CRON LOGS ENV_DUMP
+unset CRON JWT LOGS ENV_DUMP
 
 # ---------------------------------------------------------------------
 TOTAL=$((PASS + FAIL))
