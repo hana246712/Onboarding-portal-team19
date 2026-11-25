@@ -32,6 +32,7 @@ All checks are real requests under Floci's **IAM policy enforcement**:
 4. **AWS API calls**: the app roles can't create IAM users, delete or change the database, or read the master secret; `team19-db-admin` can read the settings but can't reset the master password, turn IAM login off, delete the database or raise its own rights; deletion protection stops even the administrator.
 5. **Policy simulation** (`iam simulate-principal-policy`): the allow / implicit deny / explicit deny decision for each role and action.
 6. **`backend/db/check.sql`** runs on RDS: all role and data-rule checks pass.
+7. **The app's own code** (`backend/src/db/pool.js` with `DB_IAM_AUTH=true`) logs in with IAM tokens: the API as `app_rw` and the dashboard as `dashboard_ro`, and the API's credentials can't open the dashboard's pool.
 
 Results are shown on the GitHub Actions run page (**Summary**) and saved as the `floci-rds-iam-results` artifact.
 
@@ -53,6 +54,10 @@ bash infra/floci/setup.sh
 bash infra/floci/test.sh
 docker rm -f floci        # when finished (also remove the team19-db container Floci started)
 ```
+
+## Connecting the app (for the AWS version)
+
+Set `DB_IAM_AUTH=true` and `AWS_REGION`, and give the three database URLs **without a password**, for example `DATABASE_URL=postgresql://app_rw@localhost:7001/onboarding`. `backend/src/db/pool.js` then asks `@aws-sdk/rds-signer` for a fresh 15-minute token for every new connection, signed with the credentials of the role the code runs as (`team19-api`, `team19-dashboard`, `team19-notifier`). No database password is stored anywhere. Without `DB_IAM_AUTH` the pool works exactly as before (Neon, local Postgres).
 
 ## Notes and limits
 

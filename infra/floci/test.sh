@@ -224,6 +224,28 @@ else
 fi
 
 # =====================================================================
+section "7. The app's own code logs in with IAM tokens (backend/src/db/pool.js)"
+# The API and the dashboard connect through src/db/pool.js with
+# DB_IAM_AUTH=true: no password in the URL, a fresh IAM token for every
+# new connection, signed with the role the code runs as.
+app_login() {  # role env-var db-user pool-function  -> prints current_user
+  local role="$1" var="$2" user="$3" fn="$4"
+  ( cd "$ROOT/backend" && as_role "$role" env DB_IAM_AUTH=true AWS_REGION="$REGION" \
+      "$var=postgresql://$user@$DB_HOST:$DB_PORT/$DB_NAME" node -e "
+        const db = require('./src/db/pool').$fn();
+        db.query('SELECT current_user AS u')
+          .then((r) => { console.log(r.rows[0].u); return db.end(); })
+        .catch((e) => { console.error(e.message); process.exit(1); });" )
+}
+if ( cd "$ROOT/backend" && npm ci --omit=dev --no-audit --no-fund >/dev/null 2>&1 ); then
+  expect ok      "API code logs in as app_rw with an IAM token (team19-api)"         '^app_rw$'       app_login team19-api       DATABASE_URL           app_rw       db
+  expect ok      "Dashboard code logs in as dashboard_ro with an IAM token"          '^dashboard_ro$' app_login team19-dashboard DASHBOARD_DATABASE_URL dashboard_ro dashboardDb
+  expect refused "API credentials cannot open the dashboard pool (dashboard_ro)"     ''               app_login team19-api       DASHBOARD_DATABASE_URL dashboard_ro dashboardDb
+else
+  record fail "npm ci in backend/ (needed for the app-code checks)" "see the job log"
+fi
+
+# =====================================================================
 TOTAL=$((PASS + FAIL))
 {
   echo "# Floci: RDS PostgreSQL + IAM security tests (Hana Fady)"
