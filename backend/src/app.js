@@ -36,6 +36,21 @@ app.use(
 
 app.disable('x-powered-by');
 
+// Security headers on every API response (security review, issue #12).
+// The API only returns JSON, so it may not be framed, sniffed as HTML,
+// cached by a browser or shared proxy, or load anything itself.
+app.use((req, res, next) => {
+  res.set({
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Cache-Control': 'no-store',
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
+  });
+  next();
+});
+
 // Vercel sits in front of the API as a proxy. Trusting one proxy hop
 // makes req.ip the real client address (used by the login-attempt limit).
 app.set('trust proxy', 1);

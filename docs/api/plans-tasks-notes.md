@@ -343,6 +343,8 @@ Response `201`: `{ "note": Note }`
 
 Weeks 2–3: `src/lib/planEvents.js` writes the in-app notification row for `task.assigned` in the same transaction. `plan.completed` stores nothing yet (the notifications table has no "completed" type; the dashboard reads the plan status). Weeks 4–5 (Floci): the same function sends the payload to an emulated Amazon SQS queue (`plan-events`) instead, and the notifier reads from it. The payload never contains emails, note text or tokens.
 
+**Known limit (from Jana's review of PR #46):** notifications have a once-per-day unique key (user, plan, task, type). If a task is reassigned A → B → A on the same day, A does not get a second "assigned" notification, even if they already read the first one. The reassignment itself and its audit entry still happen. Accepted for this project; a fix would be to reset `read_at` on the existing row instead of skipping it.
+
 ## 6. Dependencies
 
 - Hana Fady: `requireAuth` / `requireRole` (PR #29), templates and `template_tasks` (PR #30).

@@ -1,0 +1,52 @@
+# Security regression tests against the DEPLOYED site – Hana Fady (issue #12)
+# Runs docs/postman/deployed-regression.postman_collection.json with Newman
+# against https://team19-api.vercel.app and https://team19-web.vercel.app
+# after every successful deploy, once a day, and on demand. It creates,
+# changes and deletes nothing on the live site.
+name: Deployed security regression
+
+on:
+  workflow_run:
+    workflows: [Deploy to Vercel]
+    types: [completed]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run the regression collection against the live site
+        env:
+          # Optional low-privilege test accounts on the live site (repository
+          # secrets). Without them the role checks are skipped. No Admin
+          # credentials are ever used here.
+          STAFF_EMAIL: ${{ secrets.REGRESSION_STAFF_EMAIL }}
+          STAFF_PASSWORD: ${{ secrets.REGRESSION_STAFF_PASSWORD }}
+          CUSTOMER_EMAIL: ${{ secrets.REGRESSION_CUSTOMER_EMAIL }}
+          CUSTOMER_PASSWORD: ${{ secrets.REGRESSION_CUSTOMER_PASSWORD }}
+        run: |
+          npx --yes newman@6 run docs/postman/deployed-regression.postman_collection.json \
+            --env-var "staffEmail=$STAFF_EMAIL" --env-var "staffPassword=$STAFF_PASSWORD" \
+            --env-var "customerEmail=$CUSTOMER_EMAIL" --env-var "customerPassword=$CUSTOMER_PASSWORD" \
+            --reporters cli,json --reporter-json-export newman-report.json \
+            --suppress-exit-code
+
+      - name: Results table
+        run: |
+          node backend/scripts/newman-summary.js newman-report.json \
+            "Deployed security regression (issue #12)" > results.md || status=$?
+          cat results.md >> "$GITHUB_STEP_SUMMARY"
+          exit ${status:-0}
