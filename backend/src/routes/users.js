@@ -145,8 +145,8 @@ router.patch('/users/:id', requireAuth, requireRole('Admin'), async (req, res, n
       }
 
       // A role change must not leave work with someone who can no longer do
-      // it, or let a customer read the staff side of their own plan
-      //. Deactivation is still allowed: the dashboard's
+      // it, or let a customer read the staff side of their own plan.
+      // Deactivation is still allowed: the dashboard's
       // "inactive owners" list shows that work for reassignment.
       if (roleChanges) {
         const wasStaffSide = current.role !== 'Customer';

@@ -7,7 +7,7 @@
 try {
   process.loadEnvFile(`${__dirname}/../.env`);
 } catch {
-
+  // no .env file: use variables from the shell
 }
 
 const bcrypt = require('bcryptjs');

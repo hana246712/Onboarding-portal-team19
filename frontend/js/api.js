@@ -24,6 +24,7 @@ async function apiRequest(method, path, body) {
   try {
     data = await res.json();
   } catch {
+    // empty or non-JSON response
   }
 
   if (!res.ok) {
