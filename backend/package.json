@@ -12,7 +12,8 @@
     "start": "node local.js",
     "test": "node --test",
     "seed": "node db/seed.js",
-    "postman": "node scripts/postman.js"
+    "postman": "node scripts/postman.js",
+    "e2e:live": "node scripts/e2e-live.js"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1177.0",
