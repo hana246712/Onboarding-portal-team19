@@ -31,7 +31,8 @@ record() {  # ok|fail  label  detail
   local mark
   if [ "$1" = ok ]; then PASS=$((PASS + 1)); mark="PASS"; else FAIL=$((FAIL + 1)); mark="FAIL"; fi
   printf '%-5s %s%s\n' "$mark" "$2" "${3:+  ($3)}"
-  ROWS+="| $mark | $2 | ${3//|/\\|} |"$'\n'
+  local detail="${3:-}"
+  ROWS+="| $mark | $2 | ${detail//|/\\|} |"$'\n'
 }
 
 # HTTP status of a request:  status METHOD PATH [extra curl args...]
