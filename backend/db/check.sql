@@ -1,6 +1,5 @@
 -- =====================================================================
--- Database security and rule checks (evidence for proposal 6.2 / 6.4)
--- Owner: Hana Fady
+-- Database security and rule checks
 --
 -- Run after schema.sql and roles.sql, as the database owner:
 --     psql "<owner connection string>" -f backend/db/check.sql

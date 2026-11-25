@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Customer Onboarding Checklist Portal (Team 19) - database schema
--- Owner: Hana Fady (database setup lead)
 --
 -- Run this FIRST, as the Neon project owner (neondb_owner), on the dev
 -- branch, then on the main (production) branch. Then run roles.sql.
@@ -10,7 +9,7 @@
 BEGIN;
 
 -- ---------------------------------------------------------------------
--- Users (Auth & identity - shared task, Hana Fady)
+-- Users
 -- Accounts are created by an Admin only. Users are deactivated, never deleted.
 -- ---------------------------------------------------------------------
 CREATE TABLE users (
@@ -38,7 +37,7 @@ CREATE TABLE login_attempts (
 );
 
 -- ---------------------------------------------------------------------
--- Template & Workflow Rules (Hana Fady)
+-- Template & Workflow Rules
 -- ---------------------------------------------------------------------
 CREATE TABLE templates (
     id           SERIAL PRIMARY KEY,
@@ -70,7 +69,7 @@ CREATE TABLE template_tasks (
 );
 
 -- ---------------------------------------------------------------------
--- Plan & Task Management (Hana Anwar)
+-- Plan & Task Management
 -- ---------------------------------------------------------------------
 CREATE TABLE onboarding_plans (
     id                SERIAL PRIMARY KEY,
@@ -118,7 +117,7 @@ CREATE TABLE internal_notes (
 );
 
 -- ---------------------------------------------------------------------
--- Dashboard & Monitoring (Jana Hossam)
+-- Dashboard & Monitoring
 -- ---------------------------------------------------------------------
 -- In-app notifications (always) plus email records (when EMAIL_ENABLED).
 -- The daily job writes here through the notifier role, which can only

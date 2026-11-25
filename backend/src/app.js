@@ -1,12 +1,4 @@
-// Express application for the Customer Onboarding Checklist Portal.
-// Vercel detects this file (src/app.js) and runs the exported app as one
-// Vercel Function. For local development, run `npm run dev` (local.js).
-//
-// One API, three services as route modules:
-//   Template & Workflow Rules  -> routes/templates.js   (Hana Fady)
-//   Auth & identity (shared)   -> routes/auth.js, routes/users.js (Hana Fady)
-//   Plan & Task Management     -> routes/plans.js       (Hana Anwar)
-//   Dashboard & Monitoring     -> routes/dashboard.js   (Jana Hossam)
+// Express app. Vercel runs it as one function; `npm run dev` runs it locally.
 
 const express = require('express');
 const cors = require('cors');
@@ -36,7 +28,7 @@ app.use(
 
 app.disable('x-powered-by');
 
-// Security headers on every API response (security review, issue #12).
+// Security headers on every API response.
 // The API only returns JSON, so it may not be framed, sniffed as HTML,
 // cached by a browser or shared proxy, or load anything itself.
 app.use((req, res, next) => {
@@ -56,19 +48,16 @@ app.use((req, res, next) => {
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
-// Health check used to confirm a deployment is live.
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Route modules. Each owner works only inside their own files.
 app.use('/api', require('./routes/auth'));
 app.use('/api', require('./routes/users'));
 app.use('/api', require('./routes/templates'));
 app.use('/api', require('./routes/plans'));
 app.use('/api', require('./routes/dashboard'));
 
-// Unknown routes
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'Not found' });
 });

@@ -1,5 +1,4 @@
-// Home page after login: greets the user and lists the pages their role can use.
-// Owner: Hana Fady (issue #10). Teammates: add your page to PAGES in auth.js.
+// Home page: greets the user and lists the pages their role can open.
 
 (() => {
   const user = auth.requireLogin(['Admin', 'Staff', 'Customer']);

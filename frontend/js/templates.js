@@ -1,7 +1,4 @@
-// Templates screen. Owner: Hana Fady (issue #10).
-// Admin: list, search, create, edit, reorder, duplicate, archive.
-// Staff: list, search and read only (the API enforces this too).
-// API: /api/templates (see backend/src/routes/templates.js).
+// Templates screen. Admin: full management; Staff: read only (the API enforces this too).
 
 (() => {
   const user = auth.requireLogin(['Admin', 'Staff']);
@@ -90,6 +87,7 @@
       if (active) actions.append(el('button', { type: 'button', onClick: () => openEditor(t) }, 'Edit'));
       actions.append(el('button', { type: 'button', className: 'secondary', onClick: (e) => duplicate(e.currentTarget) }, 'Duplicate'));
       if (active) actions.append(el('button', { type: 'button', className: 'danger', onClick: (e) => archive(e.currentTarget) }, 'Archive'));
+      actions.append(el('button', { type: 'button', className: 'danger', onClick: (e) => remove(e.currentTarget) }, 'Delete'));
     }
 
     const canReorder = isAdmin && active && t.tasks.length > 1;
@@ -139,6 +137,22 @@
         const copy = await api.post(`/api/templates/${current.id}/duplicate`, title.trim() ? { title: title.trim() } : {});
         await openTemplate(copy.id);
         showMessage(pageMessage, `Copy created: "${copy.title}".`);
+      } catch (err) {
+        showMessage(pageMessage, err.message, 'error');
+      }
+    });
+  }
+
+  async function remove(button) {
+    if (!confirm(`Delete "${current.title}" permanently?\n\nThis only works if no plan was ever made from it; otherwise archive it.`)) return;
+    await busy(button, async () => {
+      try {
+        await api.del(`/api/templates/${current.id}`);
+        current = null;
+        setUrl(null);
+        show('list');
+        await loadList();
+        showMessage(pageMessage, 'Template deleted.');
       } catch (err) {
         showMessage(pageMessage, err.message, 'error');
       }

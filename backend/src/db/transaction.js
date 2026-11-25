@@ -1,5 +1,4 @@
 // Runs fn(client) inside one database transaction: all of it is saved, or none of it.
-// Shared by the template and user routes. Owner: Hana Fady.
 
 const pool = require('./pool');
 

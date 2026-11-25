@@ -1,9 +1,5 @@
-// Auth & identity - input validation for Admin user accounts. Owner: Hana Fady (issue #6).
-//
-// Pure functions (no database), so the rules can be unit-tested anywhere.
-// Only the fields listed here are ever read from the request body, so a
-// client cannot set password_hash, id, created_at or similar ("mass
-// assignment" protection).
+// Validation for user accounts. Only the fields listed here are read from the
+// body, so a client cannot set password_hash, id and so on (mass assignment).
 
 const ROLES = ['Admin', 'Staff', 'Customer'];
 const MIN_PASSWORD = 12;

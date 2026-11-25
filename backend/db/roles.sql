@@ -1,6 +1,5 @@
 -- =====================================================================
 -- Customer Onboarding Checklist Portal (Team 19) - database roles
--- Owner: Hana Fady (database setup lead)
 --
 -- Run AFTER schema.sql, as the Neon project owner (neondb_owner),
 -- once on the dev branch and once on the main branch.
@@ -11,7 +10,7 @@
 -- Never commit the real passwords. They only go into the connection
 -- strings stored in Vercel environment variables.
 --
--- Three roles, least privilege (proposal sections 4.4 and 6.2):
+-- Three roles, least privilege:
 --   app_rw        -> DATABASE_URL           the API's normal role
 --   dashboard_ro  -> DASHBOARD_DATABASE_URL dashboard read-only queries
 --   notifier      -> NOTIFIER_DATABASE_URL  daily job: read + add notifications

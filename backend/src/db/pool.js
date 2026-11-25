@@ -1,19 +1,6 @@
-// Database connection pools, one per database role (see db/roles.sql).
-// Pools are created lazily, so the app starts even when a URL is missing,
-// and reused across requests while the Vercel function stays warm.
-//
-// Two ways to log in, chosen by one setting:
-//
-//   DB_IAM_AUTH not set (the live site on Neon, local development):
-//     the connection string carries the role's password, as before.
-//
-//   DB_IAM_AUTH=true (the AWS version: Amazon RDS, emulated with Floci):
-//     the roles are IAM-only (rds_iam, infra/floci/setup.sh), so a password
-//     is refused. The URL has no password; every new connection gets a fresh
-//     15-minute IAM token from @aws-sdk/rds-signer, signed with the
-//     credentials of the role the code runs as (on AWS the ECS task or Lambda
-//     role; in Floci the assumed team19-* role). Nothing secret is stored,
-//     and a token that expires is simply replaced on the next connection.
+// One connection pool per database role (see db/roles.sql), created on first use.
+// With DB_IAM_AUTH=true (RDS on Floci) the URL has no password: every new
+// connection gets a fresh 15-minute IAM token instead.
 
 const fs = require('node:fs');
 const { Pool } = require('pg');
@@ -28,9 +15,7 @@ function defaultSigner(options) {
   return new Signer(options);
 }
 
-// TLS settings: none for a database on this machine (local Postgres, Floci),
-// otherwise verified TLS. RDS certificates are signed by the RDS CA, which can
-// be given as a file with DB_SSL_CA_FILE.
+// No TLS for a database on this machine, verified TLS otherwise (RDS CA via DB_SSL_CA_FILE).
 function tlsFor(host, env) {
   if (isLocalHost(host)) return false;
   const ssl = { rejectUnauthorized: true };
@@ -94,11 +79,8 @@ function getPool(envName) {
 }
 
 module.exports = {
-  // Read/write role used by the API (app_rw)
   db: () => getPool('DATABASE_URL'),
-  // Read-only role used by dashboard queries (dashboard_ro)
   dashboardDb: () => getPool('DASHBOARD_DATABASE_URL'),
-  // Notifications-only role used by the daily job (notifier)
   notifierDb: () => getPool('NOTIFIER_DATABASE_URL'),
   poolConfig,
 };

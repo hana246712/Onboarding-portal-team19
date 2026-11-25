@@ -1,19 +1,7 @@
-// Auth & identity (shared task) - Owner: Hana Fady
-//
-// POST /api/auth/login
-//   body: { "email": "...", "password": "..." }
-//   200 -> { token, user: { id, name, role } }
-//   400 -> missing or badly formed input
-//   401 -> wrong email or password, or deactivated account (same message,
-//          so the response never reveals which emails exist)
-//   429 -> too many failed attempts from this email + IP; try later
-//
-// Failed attempts are counted in the login_attempts table (serverless
-// memory is not shared between requests). Every login, failure and
-// lockout is written to the audit log. The audit log records the user id,
-// never the typed email: the read-only dashboard role can read the audit
-// log but is not allowed to see email addresses (least privilege).
-// Attempts on emails that don't exist are logged with no user.
+// POST /api/auth/login: 200 with a token, 400 bad input, 401 wrong email or
+// password (same message for both), 429 too many failed attempts.
+// Failed attempts live in login_attempts because serverless memory is not shared.
+// The audit log stores the user id, never the typed email.
 
 const express = require('express');
 const bcrypt = require('bcryptjs');

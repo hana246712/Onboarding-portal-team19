@@ -1,6 +1,5 @@
-// Small DOM helpers for the screens. Owner: Hana Fady (issue #10).
-// Everything is created with createElement + textContent, never innerHTML,
-// so text from the database is always shown as text and can't run as script.
+// DOM helpers: everything uses textContent, never innerHTML, so text from the
+// database is always shown as text and cannot run as script.
 
 (function (root) {
   // el('button', { type: 'button', className: 'secondary', onClick: fn }, 'Save')

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
 # Team 19 – Floci (AWS emulator): RDS PostgreSQL + IAM roles/policies
-# Owner: Hana Fady (database setup lead)
 #
 # Builds the AWS version of our database inside Floci:
 #   1. an RDS PostgreSQL instance (IAM database login on, storage
@@ -11,7 +10,7 @@
 #   2. our real schema.sql + roles.sql (app_rw, dashboard_ro, notifier),
 #      with every app role switched to IAM login (rds_iam);
 #   3. one IAM role per part of the app, each allowed to log in only
-#      as its own database user (least privilege), plus a db-admin
+#      as the database users it needs (least privilege), plus a db-admin
 #      role that can manage backups but can neither read app data nor
 #      delete the database.
 #
