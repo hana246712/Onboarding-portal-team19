@@ -12,10 +12,13 @@
     "start": "node local.js",
     "test": "node --test",
     "seed": "node db/seed.js",
-    "postman": "node scripts/postman.js"
+    "postman": "node scripts/postman.js",
+    "e2e:live": "node scripts/e2e-live.js"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1177.0",
     "@aws-sdk/client-sqs": "^3.1177.0",
+    "@aws-sdk/rds-signer": "^3.1177.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.21.2",
