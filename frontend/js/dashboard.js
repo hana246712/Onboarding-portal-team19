@@ -7,10 +7,16 @@
   const user = auth.requireLogin(['Admin', 'Staff']);
   if (!user) return;
 
-  const { el, clear, showMessage, hideMessage, formatDate } = ui;
+  const { el, clear, showMessage, hideMessage } = ui;
   const $ = (id) => document.getElementById(id);
   const message = $('page-message');
   const PAGE_SIZE = 10;
+    // "2026-12-01" -> "1 Dec 2026", read as a LOCAL date (no time-zone shift).
+  function formatDay(value) {
+    if (!value) return '–';
+    const [y, m, d] = String(value).split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
   let page = 1;
 
   // ---- summary tiles -----------------------------------------------------------
@@ -62,7 +68,7 @@
         el('progress', { max: 100, value: p.progress, 'aria-label': `${p.progress}% done` }),
         ` ${p.progress}% (${p.doneTasks}/${p.totalTasks})`),
       p.overdueTasks > 0 ? el('span', { className: 'error' }, String(p.overdueTasks)) : '0',
-      p.nextDueDate ? formatDate(p.nextDueDate) : '–',
+      formatDay(p.nextDueDate)
     ]);
 
     $('page-label').textContent = `Page ${page}`;
@@ -79,7 +85,7 @@
     ]);
 
     fillTable('overdue-rows', 'overdue-empty', overdue.tasks, (t) => [
-      t.title, t.planTitle, t.assigneeName || '(no owner)', formatDate(t.dueDate),
+      t.title, t.planTitle, t.assigneeName || '(no owner)', formatDay(t.dueDate),
       el('span', { className: 'error' }, String(t.daysOverdue)),
     ]);
 
@@ -91,7 +97,7 @@
     ]);
 
     fillTable('inactive-rows', 'inactive-empty', inactive.tasks, (t) => [
-      t.title, t.planTitle, t.assigneeName, t.status, formatDate(t.dueDate),
+      t.title, t.planTitle, t.assigneeName, t.status, formatDay(t.dueDate),
     ]);
   }
 
