@@ -180,6 +180,36 @@ router.patch('/templates/:id/archive', requireAuth, requireRole('Admin'), async 
   }
 });
 
+// ---- delete ------------------------------------------------------------------
+// Only a template that no plan was ever made from can be deleted; a used
+// template is kept (plans point to it) and has to be archived instead.
+router.delete('/templates/:id', requireAuth, requireRole('Admin'), async (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(404).json({ error: 'Template not found' });
+    const { rowCount } = await pool.db().query(
+      `DELETE FROM templates t
+        WHERE t.id = $1
+          AND NOT EXISTS (SELECT 1 FROM onboarding_plans p WHERE p.template_id = t.id)`,
+      [id]
+    );
+    if (rowCount === 0) {
+      const { rows } = await pool.db().query('SELECT 1 FROM templates WHERE id = $1', [id]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Template not found' });
+      await recordAudit({ actorId: req.user.id, action: 'template_delete', entity: 'template', entityId: id, result: 'denied', ip: req.ip });
+      return res.status(409).json({ error: 'Plans were made from this template, so it cannot be deleted. Archive it instead.' });
+    }
+    await recordAudit({ actorId: req.user.id, action: 'template_delete', entity: 'template', entityId: id, result: 'allowed', ip: req.ip });
+    return res.status(204).end();
+  } catch (err) {
+    // A plan created from it at the same moment: the foreign key refuses the delete.
+    if (err.code === '23503') {
+      return res.status(409).json({ error: 'Plans were made from this template, so it cannot be deleted. Archive it instead.' });
+    }
+    return next(err);
+  }
+});
+
 // ---- reorder tasks --------------------------------------------------
 // Body: { "taskIds": [12, 10, 11] } - every task of the template, in the new order.
 router.patch('/templates/:id/order', requireAuth, requireRole('Admin'), async (req, res, next) => {

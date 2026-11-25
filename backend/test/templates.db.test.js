@@ -280,3 +280,50 @@ test('reorder and duplicate are written to the audit log', { skip: SKIP }, async
     { action: 'template_duplicate', entity_id: String(copy.id) },
   ]);
 });
+
+test('Delete: an unused template is deleted -> 204, then 404', { skip: SKIP }, async () => {
+  const created = await createTemplate(sample({ title: `Delete me ${run}` }));
+  const res = await request(app).delete(`/api/templates/${created.body.id}`).set(as('Admin'));
+  assert.strictEqual(res.status, 204);
+  const again = await request(app).get(`/api/templates/${created.body.id}`).set(as('Admin'));
+  assert.strictEqual(again.status, 404);
+  const { rows } = await pool.db().query(
+    `SELECT result FROM audit_log WHERE action = 'template_delete' AND entity_id = $1`,
+    [String(created.body.id)]
+  );
+  assert.deepStrictEqual(rows, [{ result: 'allowed' }]);
+});
+
+test('Delete: a template used by a plan -> 409 and it is kept', { skip: SKIP }, async () => {
+  const created = await createTemplate(sample({ title: `Used template ${run}` }));
+  const { rows: [customer] } = await pool.db().query(
+    `SELECT id FROM users WHERE email = $1`, [`test-tpl-customer-${run}@example.test`]
+  );
+  const { rows: [plan] } = await pool.db().query(
+    `INSERT INTO onboarding_plans (template_id, template_version, customer_id, title, start_date)
+     VALUES ($1, 1, $2, $3, CURRENT_DATE) RETURNING id`,
+    [created.body.id, customer.id, `Test plan ${run}`]
+  );
+  try {
+    const res = await request(app).delete(`/api/templates/${created.body.id}`).set(as('Admin'));
+    assert.strictEqual(res.status, 409);
+    const still = await request(app).get(`/api/templates/${created.body.id}`).set(as('Admin'));
+    assert.strictEqual(still.status, 200);
+  } finally {
+    await pool.db().query('DELETE FROM onboarding_plans WHERE id = $1', [plan.id]);
+  }
+});
+
+test('Delete: Staff and Customer -> 403, unknown or bad id -> 404', { skip: SKIP }, async () => {
+  const created = await createTemplate(sample({ title: `Protected ${run}` }));
+  for (const role of ['Staff', 'Customer']) {
+    const res = await request(app).delete(`/api/templates/${created.body.id}`).set(as(role));
+    assert.strictEqual(res.status, 403);
+  }
+  const none = await request(app).delete('/api/templates/2147483647').set(as('Admin'));
+  assert.strictEqual(none.status, 404);
+  const bad = await request(app).delete('/api/templates/abc').set(as('Admin'));
+  assert.strictEqual(bad.status, 404);
+  const anon = await request(app).delete(`/api/templates/${created.body.id}`);
+  assert.strictEqual(anon.status, 401);
+});
